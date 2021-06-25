@@ -1,12 +1,12 @@
-#  ![AzureIcon] ![PowershellIcon] PowerShell
+# ![AzureIcon] ![PowershellIcon] PowerShell
 
 This repository contains Azure and Windows PowerShell scripts for developers and administrators to develop, deploy, and manage Microsoft Azure and Microsoft Windows ecosystem.
 
 ## Status
 
-[![Code Health](<https://github.com/segraef/Template/actions/workflows/linter.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/linter.yml>)
+[![Code Repository Health](<https://github.com/segraef/Template/actions/workflows/linter.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/linter.yml>)
 
-[![Sample Workflow](<https://github.com/segraef/Template/actions/workflows/workflow.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/workflow.yml>)
+[![PowerShell Scripts Health](<https://github.com/segraef/Template/actions/workflows/scriptanalyzer.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/scriptanalyzer.yml>)
 
 ## Creating a repository from a template
 

@@ -21,7 +21,7 @@
   Author:         <Name>
   Creation Date:  <Date>
   Purpose/Change: Initial script development
-  
+
 .EXAMPLE
   <Example goes here. Repeat this attribute for more than one example>
 #>
@@ -56,22 +56,22 @@ Import-Module ..\Write-Log.ps1
 
 function FunctionName {
   Param()
-  
+
   begin {
     Write-Log "Let's start !"
   }
-  
+
   process {
     try {
       Write-Output "Hello Template !"
     }
-    
+
     catch {
       Write-Output $_
       Write-Log $_ -Warning
     }
   }
-  
+
   end {
     if ($?) {
       Write-Log "Completed successfully !"
@@ -85,7 +85,7 @@ function FunctionName {
 
 Write-Log "Executing $($MyInvocation.MyCommand.Name)"
 
-FunctionName
+FunctionName -String $String -SecureString $SecureString
 
 Write-Log "Finished executing $($MyInvocation.MyCommand.Name)"
 

@@ -32,9 +32,21 @@
 param
 (
   [Parameter()]
-  [String]$String,
+  [String]$devOpsAccountName = 'segraef',
   [Parameter()]
-  [SecureString]$SecureString
+  [String]$devOpsTeamProjectName = 'Oahu',
+  [Parameter()]
+  [String]$devOpsPAT = 'xxx',
+  [Parameter()]
+  [String]$devOpsBaseUrl = 'https://' + $devOpsAccountName + '.visualstudio.com',
+  [Parameter()]
+  [String]$FileRepo = 'Oahu',
+  [Parameter()]
+  [String]$FileRepoBranch = 'master',
+  [Parameter()]
+  [String]$FilePath = 'Scripts/PowerShell/123.ps1',
+  [Parameter()]
+  [String]$User = ''
 )
 
 #endregion
@@ -85,17 +97,6 @@ function FunctionName {
 
 Write-Log "Executing $($MyInvocation.MyCommand.Name)"
 
-$devOpsAccountName = 'segraef'
-$devOpsTeamProjectName = 'Oahu'
-$devOpsPAT = 'xxx'
-$devOpsBaseUrl = 'https://' + $devOpsAccountName + '.visualstudio.com'
-
-$FileRepo = 'Oahu'
-$FileRepoBranch = 'master'
-$FilePath = 'Scripts/PowerShell/123.ps1'
-
-$User=""
-
 $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $User,$devOpsPAT)));
 $devOpsAuthHeader = @{Authorization=("Basic {0}" -f $base64AuthInfo)};
 
@@ -103,7 +104,7 @@ $Uri = $devOpsBaseUrl + '/' + $devOpsTeamProjectName + '/_apis/git/repositories/
 
 $File = Invoke-RestMethod -Method Get -ContentType application/json -Uri $Uri -Headers $devOpsAuthHeader
 
-Write-Host $File.content
+Write-Output $File.content
 
 Write-Log "Finished executing $($MyInvocation.MyCommand.Name)"
 
