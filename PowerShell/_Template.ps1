@@ -44,7 +44,6 @@ param
 $ErrorActionPreference = "Continue"
 $VerbosePreference = "Continue"
 
-# Dot Source required Function Libraries
 Import-Module ..\Write-Log.ps1
 
 #endregion

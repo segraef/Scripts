@@ -42,7 +42,9 @@
       Purpose/Change: Initial script development
 #>
 
-Param (
+#region Parameters
+
+param (
     [Parameter(Mandatory = $true)]
     [string]$sourceAccount,
     [Parameter(Mandatory = $true)]
@@ -61,29 +63,26 @@ Param (
     [securestring]$destinationSecureAccessToken
 )
 
-Function xLoad-Module ($m) {
+#endregion
 
-    if (Get-Module | Where-Object { $_.Name -eq $m }) {
-        Write-Output "Module $m is already imported."
-    }
-    else {
-        if (Get-Module -ListAvailable | Where-Object { $_.Name -eq $m }) {
-            Import-Module $m -Verbose
-        }
-        else {
-            if (Find-Module -Name $m | Where-Object { $_.Name -eq $m }) {
-                Install-Module -Name $m -Force -Verbose -Scope CurrentUser
-                Import-Module $m -Verbose
-            }
-            else {
-                Write-Output "Module $m not imported, not available and not in online gallery, exiting."
-                EXIT 1
-            }
-        }
-    }
-}
+#region Initialisations
 
-xLoad-Module VSTeam
+$ErrorActionPreference = "Stop"
+$VerbosePreference = "Continue"
+
+Import-Module ..\Load-Module.ps1
+
+#endregion
+
+#region Declarations
+#endregion
+
+#region Functions
+#endregion
+
+#region Execution
+
+Load-Module VSTeam
 
 if ($sourceAccount -and $sourceProject) {
     # Set the source project
