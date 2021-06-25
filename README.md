@@ -1,4 +1,4 @@
-# ![AzureIcon] ![PowershellIcon] PowerShell
+# ![AzureIcon] ![BashIcon] ![PowershellIcon] PowerShell
 
 This repository contains Azure and Windows PowerShell scripts for developers and administrators to develop, deploy, and manage Microsoft Azure and Microsoft Windows ecosystem.
 
@@ -44,6 +44,7 @@ If you would like to become an active contributor to this repository or project,
 [Contributing]: CONTRIBUTING.md
 [AzureIcon]: docs/media/MicrosoftAzure-32px.png
 [PowershellIcon]: docs/media/MicrosoftPowerShellCore-32px.png
+[BashIcon]: docs/media/Bash_Logo_black_and_white_icon_only-32px.svg
 
 <!-- External -->
 [Az]: <https://img.shields.io/powershellgallery/v/Az.svg?style=flat-square&label=Az>
