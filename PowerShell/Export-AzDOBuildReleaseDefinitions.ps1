@@ -43,17 +43,25 @@
 #>
 
 Param (
-    [Parameter(Mandatory = $true, ValueFromPipeline = $true)][string]$sourceAccount,
-    [Parameter(Mandatory = $true, ValueFromPipeline = $true)][string]$sourceProject,
-    [Parameter(Mandatory = $true, ValueFromPipeline = $true)][string]$sourcePersonalAccessToken,
-    [Parameter(Mandatory = $false, ValueFromPipeline = $true)][securestring]$sourceSecureAccessToken,
-    [Parameter(Mandatory = $False, ValueFromPipeline = $true)][string]$destinationAccount,
-    [Parameter(Mandatory = $False, ValueFromPipeline = $true)][string]$destinationProject,
-    [Parameter(Mandatory = $False, ValueFromPipeline = $true)][string]$destinationPersonalAccessToken,
-    [Parameter(Mandatory = $False, ValueFromPipeline = $true)][securestring]$destinationSecureAccessToken
+    [Parameter(Mandatory = $true)]
+    [string]$sourceAccount,
+    [Parameter(Mandatory = $true)]
+    [string]$sourceProject,
+    [Parameter(Mandatory = $true)]
+    [string]$sourcePersonalAccessToken,
+    [Parameter(Mandatory = $false)]
+    [securestring]$sourceSecureAccessToken,
+    [Parameter(Mandatory = $False)]
+    [string]$destinationAccount,
+    [Parameter(Mandatory = $False)]
+    [string]$destinationProject,
+    [Parameter(Mandatory = $False)]
+    [string]$destinationPersonalAccessToken,
+    [Parameter(Mandatory = $False)]
+    [securestring]$destinationSecureAccessToken
 )
 
-Function Load-Module ($m) {
+Function xLoad-Module ($m) {
 
     if (Get-Module | Where-Object { $_.Name -eq $m }) {
         Write-Output "Module $m is already imported."
@@ -75,7 +83,7 @@ Function Load-Module ($m) {
     }
 }
 
-Load-Module VSTeam
+xLoad-Module VSTeam
 
 if ($sourceAccount -and $sourceProject) {
     # Set the source project

@@ -34,7 +34,7 @@ param
   [Parameter()]
   [String]$policyFolder = ".\",
   [Parameter()]
-  [String]$managementGroup = Get-AzManagementGroup | Out-GridView -PassThru,
+  [String]$managementGroup = (Get-AzManagementGroup | Out-GridView -PassThru),
   [Parameter()]
   [String]$policyDescription = "Apply Diagnostics Settings"
 )
