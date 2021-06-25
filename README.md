@@ -4,9 +4,9 @@ This repository contains Azure and Windows PowerShell scripts for developers and
 
 ## Status
 
-[![Code Repository Health](<https://github.com/segraef/Template/actions/workflows/linter.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/linter.yml>)
+[![SuperLinter](<https://github.com/segraef/Scripts/actions/workflows/linter.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/linter.yml>)
 
-[![PowerShell Scripts Health](<https://github.com/segraef/Template/actions/workflows/scriptanalyzer.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/scriptanalyzer.yml>)
+[![PowerShell ScriptAnalyzer](<https://github.com/segraef/Scripts/actions/workflows/scriptanalyzer.yml/badge.svg>)](https://github.com/segraef/Scripts/actions/workflows/scriptanalyzer.yml)
 
 ## Creating a repository from a template
 
