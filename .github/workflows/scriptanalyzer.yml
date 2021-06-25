@@ -1,0 +1,17 @@
+name: ScriptAnalyzer
+
+on: [pull_request]
+
+jobs:
+  job:
+    name: "Run PSSA"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: ScriptAnalyzer
+        shell: pwsh
+        run: |
+          # $VerbosePreference = "Continue"
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.19.0 -Force
+          Invoke-ScriptAnalyzer -Path . -Recurse -ReportSummary

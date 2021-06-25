@@ -1,0 +1,22 @@
+name: ScriptAnalyzer
+
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+  - job:
+    displayName: "Run PSSA"
+    steps:
+      - task: PowerShell@2
+        displayName: Analysis
+        inputs:
+          targetType: 'inline'
+          showWarnings: true
+          pwsh: true
+          script: |
+            # $VerbosePreference = "Continue"
+            Install-Module PSScriptAnalyzer -RequiredVersion 1.19.0 -Force
+            Invoke-ScriptAnalyzer -Path . -Recurse -ReportSummary
