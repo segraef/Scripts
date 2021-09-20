@@ -8,10 +8,6 @@ This repository contains Azure and Windows PowerShell scripts for developers and
 
 [![PowerShell ScriptAnalyzer](<https://github.com/segraef/Scripts/actions/workflows/scriptanalyzer.yml/badge.svg>)](https://github.com/segraef/Scripts/actions/workflows/scriptanalyzer.yml)
 
-## Creating a repository from a template
-
-You can [generate](https://github.com/segraef/Template/generate) a new repository with the same directory structure and files as an existing repository. More details can be found [here][CreateFromTemplate].
-
 ## Reporting Issues and Feedback
 
 ### Issues and Bugs

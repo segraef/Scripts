@@ -48,16 +48,14 @@ Process {
 	}
 
 	for ($i = 0; $i -lt $Minutes; $i++) {
-		cls
+		$start = (Get-Date -Format HH:mm:ss)
 		$timeleft = $Minutes - $i
-		Write-Host (Get-Date -Format HH:mm:ss) -ForegroundColor Green
-		Write-Host 'Time left: ' -NoNewline
-		Write-Host "$timeleft" -ForegroundColor Red -NoNewline
-		Write-Host ' Minutes'
+		Clear-Host
+		Write-Output "Start: $start"
 		$shell.sendkeys(' ')
 		for ($j = 0; $j -lt 6; $j++) {
 			for ($k = 0; $k -lt 10; $k++) {
-				Write-Progress -Activity 'Simulating activity ...' -PercentComplete ($k * 10) -Status "Please ... don't disturb me."
+				Write-Progress -Activity 'Simulating activity ...' -PercentComplete ($k * 10) -Status "Please wait $timeleft Minutes."
 				Start-Sleep -Seconds 1
 			}
 		}
