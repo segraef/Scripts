@@ -1,0 +1,8 @@
+variables:
+  vmImage: 'ubuntu-latest'
+  poolName: ''
+  serviceConnection: '<SERVICE_CONNECTION'
+  location: 'West Europe'
+  resourceGroupName: '<RESOURCE_GROUP_NAME'
+  azurePowerShellVersion: 'latestVersion'
+  preferredAzurePowerShellVersion: ''

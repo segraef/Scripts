@@ -1,0 +1,49 @@
+name: Create Azure Pipelines
+
+variables:
+  - template: variables.yml
+  - name: PAT
+    value: '$(System.AccessToken)'
+  - name: OrganizationUri
+    value: '$(System.TeamFoundationCollectionUri)'
+  - name: ProjectName
+    value: '$(System.TeamProject)'
+  - name: RepositoryName
+    value: '$(Build.Repository.Name)'
+
+trigger:
+  batch: true
+  branches:
+    include:
+      - notrigger
+
+stages:
+  - stage: CreateAzurePipelines
+    displayName: Create Azure Pipelines
+    jobs:
+      - job:
+        displayName: Create Azure Pipelines
+        pool:
+          vmImage: $(vmImage)
+        steps:
+          - task: AzurePowerShell@5
+            enabled: true
+            displayName: Create Azure Pipelines
+            inputs:
+              azureSubscription: $(serviceConnection)
+              azurePowerShellVersion: LatestVersion
+              preferredAzurePowerShellVersion: $(preferredAzurePowerShellVersion)
+              pwsh: true
+              ScriptType: InlineScript
+              inline: |
+                . "$(System.DefaultWorkingDirectory)/PowerShell/New-AzPipeline.ps1"
+                $OrganizationName = '$(OrganizationUri)'
+
+                $splat = @{
+                  PAT               = '$(PAT)'
+                  OrganizationName  = $OrganizationName.Split("/")[-2]
+                  ProjectName       = '$(ProjectName)'
+                  RepositoryName    = '$(RepositoryName)'
+                }
+
+                New-AzPipeline @splat -Verbose
