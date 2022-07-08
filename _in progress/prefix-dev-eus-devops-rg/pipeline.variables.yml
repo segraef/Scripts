@@ -1,0 +1,7 @@
+variables:
+  resourceGroupName: 'prefix-dev-eus-devops-rg'
+  environmentPath: 'root/prefix-dev-eus-water-02 (<<subID>>)'
+  location: 'East US'
+  vmImage: 'ubuntu-latest'
+  poolName: 'prefix-NonProd-WindowsPool-001' # prefix-NonProd-WindowsPool-001
+  serviceConnection: 'prefix-dev-water-sp'

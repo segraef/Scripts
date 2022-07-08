@@ -1,0 +1,58 @@
+parameters:
+  jobName:
+  moduleName:
+  scriptType:
+  scriptFilePath:
+  dependsOn: []
+  environment: ''
+  timeoutInMinutes: 90
+  artifactFeedPath: '$(artifactFeedPath)'
+  serviceConnection: '$(serviceConnection)'
+  vmImage: $(vmImage)
+  poolName: $(poolName)
+  location: '$(location)'
+  resourceGroupName: '$(resourceGroupName)'
+  managementGroupId: '$(managementGroupId)'
+  displayName: 'Deploy module'
+  whatif: false
+  enabled: true
+
+jobs:
+  - deployment: ${{ parameters.jobName }}${{ parameters.whatif }}
+    ${{ if eq( parameters.whatif, true) }}:
+      displayName: ${{ parameters.displayName }} WhatIf
+    ${{ if ne( parameters.whatif, true) }}:
+      displayName: ${{ parameters.displayName }}
+    ${{ if ne( parameters.dependsOn, '') }}:
+      dependsOn:
+        - ${{ each dependency in parameters.dependsOn }}:
+            - ${{ dependency }}${{ parameters.whatif }}
+    environment: ${{ parameters.environment }}
+    timeoutInMinutes: ${{ parameters.timeoutInMinutes }}
+    pool:
+      ${{ if ne(parameters.vmImage, '') }}:
+        vmImage: ${{ parameters.vmImage }}
+      ${{ if ne(parameters.poolName, '') }}:
+        name: ${{ parameters.poolName }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - checkout: self
+              persistCredentials: true
+            - task: AzureCLI@2
+              displayName: 'Invoke Command via Azure CLI on [${{ parameters.vmName }}] in [${{ parameters.resourceGroupName }}]'
+              enabled: ${{ parameters.enabled }}
+              inputs:
+                azureSubscription: ${{ parameters.serviceConnection }}
+                scriptType: 'ps'
+                scriptLocation: inlineScript
+                inlineScript: |
+                  if ('${{ parameters.scriptType }}' -eq 'bash') {
+                    az vm run-command invoke -g ${{ parameters.resourceGroupName }} -n ${{ parameters.vmName }} --command-id RunShellScript \
+                    --scripts @${{ parameters.scriptFilePath }} --parameters "arg1=somefoo" "arg2=somebar"
+                  } else {
+                    az vm run-command invoke -g ${{ parameters.resourceGroupName }} -n ${{ parameters.vmName }} --command-id RunPowerShellScript \
+                    --scripts @${{ parameters.scriptFilePath }} --parameters "arg1=somefoo" "arg2=somebar"
+                  }
+                  Write-Output "$(Build.SourcesDirectory)/$(environmentPath)/"

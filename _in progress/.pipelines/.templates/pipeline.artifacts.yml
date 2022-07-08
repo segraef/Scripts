@@ -1,0 +1,66 @@
+variables:
+  # Artifacts Feed
+  artifactFeedPath: '$(System.Teamproject)/ResourceModules'
+  packagePath: ModulePackages
+  downloadDirectory: $(Build.SourcesDirectory)/$(packagePath)
+
+  # Artifacts
+  RGModuleName: 'Microsoft.resources.resourcegroups'
+  RGModuleVersion: '*'
+
+  VnetModuleName: 'Microsoft.Network.virtualnetworks'
+  VnetModuleVersion: '*'
+
+  VnetPeeringModuleName: 'Microsoft.Network.VirtualNetworks.VirtualNetworkPeering'
+  VnetPeeringModuleVersion: '*'
+
+  RouteTablesModuleName: 'Microsoft.Network.RouteTables'
+  RouteTablesModuleVersion: '*'
+
+  NsgModuleName: 'Microsoft.Network.networksecuritygroups'
+  NsgModuleVersion: '*'
+
+  AzureBastionModuleName: 'Microsoft.Network.bastionhosts'
+  AzureBastionModuleVersion: '*'
+
+  DdosProtectionPlansModuleName: 'Microsoft.Network.DdosProtectionPlans'
+  DdosProtectionPlansModuleVersion: '*'
+
+  ExpressRouteCircuitModuleName: 'Microsoft.Network.ExpressRouteCircuits'
+  ExpressRouteCircuitModuleVersion: '*'
+
+  PublicIpPrefixesModuleName: 'Microsoft.Network.PublicIpPrefixes'
+  PublicIpPrefixesModuleVersion: '*'
+
+  VirtualNetworkGatewayModuleName: 'Microsoft.Network.VirtualNetworkGateways'
+  VirtualNetworkGatewayModuleVersion: '*'
+
+  VirtualNetworkGatewayConnectionModuleName: 'Microsoft.Network.vpnGateways.connections'
+  VirtualNetworkGatewayConnectionModuleVersion: '*'
+
+  LocalNetworkGatewayModuleName: 'Microsoft.Network.LocalNetworkGateways'
+  LocalNetworkGatewayModuleVersion: '*'
+
+  NetworkWatcherModuleName: 'Microsoft.Network.networkWatchers'
+  NetworkWatcherModuleVersion: '0.4.1033-prerelease'
+
+  StorageAccountsModuleName: 'Microsoft.Storage.storageAccounts'
+  StorageAccountsModuleVersion: '*'
+
+  KVModuleName: 'Microsoft.keyvault.vaults'
+  KVModuleVersion: '*'
+
+  VMModuleName: 'Microsoft.compute.virtualmachines'
+  VMModuleVersion: '0.4.1024-prerelease'
+
+  PEModuleName: 'microsoft.network.privateendpoints'
+  PEModuleVersion: '*'
+
+  SQLMIModuleName: 'Microsoft.sql.managedinstances'
+  SQLMIModuleVersion: '0.4.1025-prerelease'
+
+  RSVModuleName: 'Microsoft.recoveryservices.vaults'
+  RSVModuleVersion: '0.4.1032-prerelease'
+
+  LogAnalyticsModuleName: 'Microsoft.OperationalInsights.workspaces'
+  LogAnalyticsModuleVersion: '*'
