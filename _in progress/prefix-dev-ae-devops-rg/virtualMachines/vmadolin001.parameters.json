@@ -1,0 +1,73 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "name": {
+            "value": "vmadolin001"
+        },
+        "osType": {
+            "value": "Linux"
+        },
+        "encryptionAtHost": {
+            "value": false
+        },
+        "imageReference": {
+            "value": {
+                "publisher": "Canonical",
+                "offer": "UbuntuServer",
+                "sku": "18.04-LTS",
+                "version": "latest"
+            }
+        },
+        "osDisk": {
+            "value": {
+                "diskSizeGB": "128",
+                "managedDisk": {
+                    "storageAccountType": "Premium_LRS"
+                }
+            }
+        },
+        "vmSize": {
+            "value": "Standard_B12ms"
+        },
+        "adminUsername": {
+            "value": "<<GENERIC_USER>>"
+        },
+        "disablePasswordAuthentication": {
+            "value": true
+        },
+        "publicKeys": {
+            "value": [{
+                "path": "/home/<<GENERIC_USER>>/.ssh/authorized_keys",
+                "keyData": "ssh-rsa <<GENERIC_KEY>>"
+            }]
+        },
+        "nicConfigurations": {
+            "value": [{
+                "nicSuffix": "-nic-01",
+                "ipConfigurations": [{
+                    "name": "ipconfig01",
+                    "subnetId": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-network-rg/providers/Microsoft.Network/virtualNetworks/prefix-dev-eus-spoke-vnet01/subnets/ado-subnet",
+                    "pipConfiguration": {
+                        "publicIpNameSuffix": "-pip-01"
+                    }
+                }],
+                "nsgId": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-devops-rg/providers/Microsoft.Network/networkSecurityGroups/prefix-az-nsg-ado-001"
+            }]
+        },
+        "extensionCustomScriptConfig": {
+            "value": {
+                "enabled": false,
+                "fileData": [{
+                    "uri": "https://<<sa>>.blob.core.windows.net/scripts/devops_runtime_baremetal.sh",
+                    "storageAccountId": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-devops-rg/providers/Microsoft.Storage/storageAccounts/<<sa>>"
+                }]
+            }
+        },
+        "extensionCustomScriptProtectedSetting": {
+            "value": {
+                "commandToExecute": "devops_runtime_baremetal.sh"
+            }
+        }
+    }
+}

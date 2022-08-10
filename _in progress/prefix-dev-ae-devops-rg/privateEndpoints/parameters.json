@@ -1,0 +1,27 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "name": {
+            "value": "pe-dev-kvlt-001"
+        },
+        "targetSubnetResourceId": {
+            "value": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-network-rg/providers/Microsoft.Network/virtualNetworks/prefix-dev-eus-spoke-vnet01/subnets/pe"
+        },
+        "serviceResourceId": {
+            "value": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-devops-rg/providers/Microsoft.KeyVault/vaults/prefix-dev-eus-kv-009"
+        },
+        "groupId": {
+            "value": [
+                "vault"
+            ]
+        },
+        "privateDnsZoneGroups": {
+            "value": [{
+                "privateDNSResourceIds": [
+                    "/subscriptions/<<subID>>/resourceGroups/prefix-id-eus-network-rg/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net"
+                ]
+            }]
+        }
+    }
+}
