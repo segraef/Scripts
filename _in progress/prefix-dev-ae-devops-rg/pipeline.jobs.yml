@@ -1,0 +1,169 @@
+# Artifacts need to be set in Platform\.pipelines\.templates\pipeline.artifacts.yml to be used for moduleName and moduleVersion.
+
+parameters:
+  vmImage: $(vmImage)
+  poolName: $(poolName)
+  serviceConnection: '$(serviceConnection)'
+  environment: ''
+  whatif: false
+
+jobs:
+# Resource Group
+# --------------
+- template: /.pipelines/.templates/pipeline.jobs.artifact.deploy.yml
+  parameters:
+    jobName: Deploy_ResourceGroup
+    displayName: 'Deploy ResourceGroup'
+    moduleName: '$(RGModuleName)'
+    moduleVersion: '$(RGModuleVersion)'
+    parameterFilePath: '${{ parameters.resourceGroupName }}/parameters.json'
+    vmImage: '${{ parameters.vmImage }}'
+    poolName: '${{ parameters.poolName }}'
+    serviceConnection: '${{ parameters.serviceConnection }}'
+    environment: '${{ parameters.environment }}'
+    whatif: '${{ parameters.whatif }}'
+    enabled: true
+
+# Storage Account
+# ----------------
+- template: /.pipelines/.templates/pipeline.jobs.artifact.deploy.yml
+  parameters:
+    jobName: Deploy_Storage_Account
+    displayName: 'Deploy Storage Account'
+    moduleName: '$(StorageAccountsModuleName)'
+    moduleVersion: '$(StorageAccountsModuleVersion)'
+    parameterFilePath: '${{ parameters.resourceGroupName }}/storageAccounts/parameters.json'
+    vmImage: '${{ parameters.vmImage }}'
+    poolName: '${{ parameters.poolName }}'
+    serviceConnection: '${{ parameters.serviceConnection }}'
+    environment: '${{ parameters.environment }}'
+    whatif: '${{ parameters.whatif }}'
+    enabled: true
+    dependsOn:
+    - Deploy_ResourceGroup
+
+# Network Security Groups
+# ----------------
+- template: /.pipelines/.templates/pipeline.jobs.artifact.deploy.yml
+  parameters:
+    jobName: Deploy_NSG
+    displayName: 'Deploy Network Security Groups'
+    moduleName: '$(NSGModuleName)'
+    moduleVersion: '$(NSGModuleVersion)'
+    parameterFilePath: '${{ parameters.resourceGroupName }}/networkSecurityGroups/parameters.json'
+    vmImage: '${{ parameters.vmImage }}'
+    poolName: '${{ parameters.poolName }}'
+    serviceConnection: '${{ parameters.serviceConnection }}'
+    environment: '${{ parameters.environment }}'
+    whatif: '${{ parameters.whatif }}'
+    enabled: true
+    dependsOn:
+    - Deploy_ResourceGroup
+
+# Key Vault
+# ----------------
+- template: /.pipelines/.templates/pipeline.jobs.artifact.deploy.yml
+  parameters:
+    jobName: Deploy_Key_Vault
+    displayName: 'Deploy Key Vault'
+    moduleName: '$(KVModuleName)'
+    moduleVersion: '$(KVModuleVersion)'
+    parameterFilePath: '${{ parameters.resourceGroupName }}/keyVaults/parameters.json'
+    vmImage: '${{ parameters.vmImage }}'
+    poolName: '${{ parameters.poolName }}'
+    serviceConnection: '${{ parameters.serviceConnection }}'
+    environment: '${{ parameters.environment }}'
+    whatif: '${{ parameters.whatif }}'
+    enabled: true
+    dependsOn:
+    - Deploy_NSG
+
+# Virtual Machines (Linux)
+# ----------------
+- template: /.pipelines/.templates/pipeline.jobs.artifact.deploy.yml
+  parameters:
+    jobName: Deploy_Virtual_Machines_Linux
+    displayName: 'Deploy Virtual Machines'
+    moduleName: '$(VMModuleName)'
+    moduleVersion: '0.4.1024-prerelease'
+    parameterFilePath: '${{ parameters.resourceGroupName }}/virtualMachines/vmadolin001.parameters.json'
+    vmImage: '${{ parameters.vmImage }}'
+    poolName: '${{ parameters.poolName }}'
+    serviceConnection: '${{ parameters.serviceConnection }}'
+    environment: '${{ parameters.environment }}'
+    whatif: '${{ parameters.whatif }}'
+    enabled: false
+    dependsOn:
+    - Deploy_Key_Vault
+
+# Virtual Machines (Windows)
+# ----------------
+- template: /.pipelines/.templates/pipeline.jobs.artifact.deploy.yml
+  parameters:
+    jobName: Deploy_Virtual_Machines_Windows
+    displayName: 'Deploy Virtual Machines'
+    moduleName: '$(VMModuleName)'
+    moduleVersion: '0.4.1024-prerelease'
+    parameterFilePath: '${{ parameters.resourceGroupName }}/virtualMachines/vmadowin001.parameters.json'
+    vmImage: '${{ parameters.vmImage }}'
+    poolName: '${{ parameters.poolName }}'
+    serviceConnection: '${{ parameters.serviceConnection }}'
+    environment: '${{ parameters.environment }}'
+    whatif: '${{ parameters.whatif }}'
+    enabled: true
+    dependsOn:
+    - Deploy_Key_Vault
+
+# Virtual Machines (Windows)
+# ----------------
+- template: /.pipelines/.templates/pipeline.jobs.artifact.deploy.yml
+  parameters:
+    jobName: Deploy_Virtual_Machines_Windows_2
+    displayName: 'Deploy Virtual Machines'
+    moduleName: '$(VMModuleName)'
+    moduleVersion: '0.4.1024-prerelease'
+    parameterFilePath: '${{ parameters.resourceGroupName }}/virtualMachines/vmadowin002.parameters.json'
+    vmImage: '${{ parameters.vmImage }}'
+    poolName: '${{ parameters.poolName }}'
+    serviceConnection: '${{ parameters.serviceConnection }}'
+    environment: '${{ parameters.environment }}'
+    whatif: '${{ parameters.whatif }}'
+    enabled: true
+    dependsOn:
+    - Deploy_Key_Vault
+
+# Invoke Command
+# ----------------
+- template: /.pipelines/.templates/pipeline.jobs.script.yml
+  parameters:
+    jobName: InvokeCommand
+    displayName: 'Invoke Command'
+    scriptType: 'Bash' # PowerShell
+    scriptFilePath: '${{ parameters.resourceGroupName }}/scripts/script.sh'
+    vmImage: '${{ parameters.vmImage }}'
+    poolName: '${{ parameters.poolName }}'
+    serviceConnection: '${{ parameters.serviceConnection }}'
+    environment: '${{ parameters.environment }}'
+    whatif: '${{ parameters.whatif }}'
+    enabled: false
+    dependsOn:
+    - Deploy_Key_Vault
+
+# Deploy Private Endpoint
+# ----------------
+- template: /.pipelines/.templates/pipeline.jobs.artifact.deploy.yml
+  parameters:
+    jobName: Deploy_PE
+    displayName: 'Deploy Private Endpoints'
+    moduleName: '$(PEModuleName)'
+    moduleVersion: '$(PEModuleVersion)'
+    parameterFilePath: '${{ parameters.resourceGroupName }}/privateEndpoints/parameters.json'
+    vmImage: '${{ parameters.vmImage }}'
+    poolName: '${{ parameters.poolName }}'
+    serviceConnection: '${{ parameters.serviceConnection }}'
+    environment: '${{ parameters.environment }}'
+    whatif: '${{ parameters.whatif }}'
+    enabled: true
+    dependsOn:
+      - Deploy_Virtual_Machines_Windows
+      - Deploy_Virtual_Machines_Linux
