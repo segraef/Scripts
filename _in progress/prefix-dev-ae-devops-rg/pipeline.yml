@@ -1,0 +1,26 @@
+name: $(resourceGroupName)
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - root/prefix-dev-eus-water-02 (<<subID>>)/prefix-dev-eus-devops-rg/*
+
+variables:
+  - template: pipeline.variables.yml
+  - template: /.pipelines/.templates/pipeline.artifacts.yml
+
+stages:
+  - stage: Deployment
+    jobs:
+      - template: ./pipeline.jobs.yml
+        parameters:
+          vmImage: '$(vmImage)'
+          poolName: '$(poolName)'
+          serviceConnection: '$(serviceConnection)'
+          resourceGroupName: '$(resourceGroupName)'
+          parameterFilePath: ''
+          environment: DEV
+          whatif: false
