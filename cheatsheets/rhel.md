@@ -3,10 +3,14 @@
 # In order to list all users on Linux, use the cat command as follows:
 `cat /etc/passwd`
 
-# yum and Proxy
+# yum (no proxy)
 ```
 yum update
 yum install git
+```
+
+# Proxy
+```
 export http_proxy=http://<proxy>:8080
 export https_proxy=http://<proxy>:8080:8080
 
@@ -29,3 +33,12 @@ mv terraform /usr/bin/ or /usr/local/bin/
 chmod 777 /usr/bin/terraform
 terraform --version
 ```
+
+# Install PowerShell
+
+```
+sudo yum install https://github.com/PowerShell/PowerShell/releases/download/v7.3.0/powershell-7.3.0-1.rh.x86_64.rpm
+```
+
+sudo yum install azure-cli
+sudo yum install telnet
