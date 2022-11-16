@@ -40,5 +40,30 @@ terraform --version
 sudo yum install https://github.com/PowerShell/PowerShell/releases/download/v7.3.0/powershell-7.3.0-1.rh.x86_64.rpm
 ```
 
+```
 sudo yum install azure-cli
 sudo yum install telnet
+```
+
+
+# Show current services
+
+```
+service --status-all
+```
+
+# Create proxybypass file
+
+```
+echo $'dev.azure.com
+management.azure.com
+login.microsoftonline.com
+tcp0000vsn9025devba.blob.core.windows.net
+10.54.177.149' > .proxybypass
+```
+
+# Remove directory
+
+```
+rm -rf directory/
+```
