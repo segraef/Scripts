@@ -1,5 +1,5 @@
 $folder = Get-Location # '.'
-$localRepos = Get-ChildItem $folder.Path -Directory | select *
+$localRepos = Get-ChildItem $folder.Path -Directory -recurse  | select *
 
 foreach($repo in $localRepos) {
     "$($repo.FullName)"
