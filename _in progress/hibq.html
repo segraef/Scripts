@@ -1,0 +1,170 @@
+<html>
+<head>
+  <title>HIBQ</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    form {
+      margin: 20px 0;
+    }
+    input[type="password"] {
+      font-size: 18px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    input[type="text"] {
+      font-size: 18px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    button[type="button"] {
+      font-size: 18px;
+      padding: 10px 20px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button[type="button"]:hover {
+      background-color: #45a049;
+    }
+    .result {
+      margin: 20px 0;
+      font-size: 18px;
+    }
+    .result.safe {
+      color: green;
+    }
+    .result.unsafe {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+    <h1>HIBQ</h1>
+    <form>
+      API Key: <input type="password" id="key" value="xxx">
+    </form>
+    resultKey: <p id="resultKey"></p>
+
+    <p>Enter a password to check if it has been compromised in a data breach:</p>
+    <form>
+      <input type="password" id="password">
+      <button type="button" onclick="checkPassword()">Check Password</button>
+    </form>
+    resultPassword: <p id="resultPassword"></p>
+
+    <form>
+      <input type="text" id="account">
+      <button type="button" onclick="checkAccount()">Check Account</button>
+    </form>
+    resultAccount: <p id="resultAccount"></p>
+
+    <form>
+      <label for="email">Email:</label>
+      <input type="email" id="email" name="email">
+      <button type="button" onclick="checkEmail()">Check</button>
+    </form>
+    <p id="result"></p>
+
+    <script>
+      function checkPassword() {
+        // Get the API key
+        var key = document.getElementById("key").value;
+
+        // Get the password from the input field
+        var password = document.getElementById('password').value;
+
+        // Use the Have I Been Pwned API to check if the password has been compromised
+        fetch('https://api.pwnedpasswords.com/range/' + password.substring(0, 5), {
+          // "method": "GET",
+          "headers": {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "mode",
+            "Access-Control-Allow-Methods": "*",
+            "mode": "no-cors",
+            "hibp-api-key": key
+          }
+        })
+          .then(response => response.text())
+          .then(data => {
+            // Split the response into lines
+            var lines = data.split('\n');
+
+            // Search for the password hash in the response
+            for (var i = 0; i < lines.length; i++) {
+              var line = lines[i];
+              var hash = line.substring(0, 35);
+              var count = line.substring(36);
+              if (password.toUpperCase() == hash) {
+                // If the password hash is found, display the result
+                document.getElementById('resultPassword').innerHTML = 'This password has been compromised ' + count + ' times. It is not safe to use.';
+                return;
+              }
+            }
+
+            // If the password hash is not found, display a message saying the password is safe to use
+            document.getElementById('resultPassword').innerHTML = 'This password has not been compromised. It is safe to use.';
+            document.getElementById('resultKey').innerHTML = 'The API Key you entered:' + key;
+          });
+      }
+      function checkAccount() {
+        // Get the API key
+        var key = document.getElementById("key").value;
+
+        // Get the account from the input field
+        var account = document.getElementById('account').value;
+
+        fetch("https://haveibeenpwned.com/api/v3/breachedaccount/" + account + "?truncateResponse=false", {
+          "method": "GET",
+          "headers": {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "mode",
+            "Access-Control-Allow-Methods": "*",
+            "mode": "no-cors",
+            "hibp-api-key": key
+          }
+        })
+        .then(response => {
+          console.log(response);
+        })
+        .catch(err => {
+          console.error(err);
+        });
+      }
+
+      function checkEmail() {
+        // Get the API key
+        var key = document.getElementById("key").value;
+
+        var email = document.getElementById("email").value;
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "https://haveibeenpwned.com/api/v3/breachedaccount/" + email + "?truncateResponse=false");
+        xhr.setRequestHeader("hibp-api-key", key);
+        xhr.onload = function() {
+          var resultElement = document.getElementById("result");
+          if (xhr.status === 200) {
+            var breaches = JSON.parse(xhr.responseText);
+            if (breaches.length > 0) {
+              resultElement.innerHTML = "The email address " + email + " has been compromised in the following breaches: " + breaches.map(b => b.Name).join(", ");
+            } else {
+              resultElement.innerHTML = "The email address " + email + " has not been found in any breaches.";
+            }
+          } else {
+            resultElement.innerHTML = "An error occurred: " + xhr.status + " " + xhr.statusText;
+          }
+        };
+        xhr.send();
+      }
+    </script>
+  </body>
+  </html>
