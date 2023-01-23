@@ -58,8 +58,8 @@ service --status-all
 echo $'dev.azure.com
 management.azure.com
 login.microsoftonline.com
-tcp0000vsn9025devba.blob.core.windows.net
-10.54.177.149' > .proxybypass
+tbla.blob.core.windows.net
+12.24.147.249' > .proxybypass
 ```
 
 # Remove directory
