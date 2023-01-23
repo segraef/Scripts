@@ -41,7 +41,7 @@ if (-not (Test-Path "$PWD\agent\")) {
     Write-Host "1. Determining matching Azure Pipelines agent..." -ForegroundColor Cyan
 
     $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$(Get-Content ${Env:AZP_TOKEN_FILE})"))
-    $package = Invoke-RestMethod -Headers @{Authorization=("Basic $base64AuthInfo")} "$(${Env:AZP_URL})/_apis/distributedtask/packages/agent?platform=win-x64&`$top=1" -SkipCertificateCheck
+    $package = Invoke-RestMethod -Headers @{Authorization=("Basic $base64AuthInfo")} "$(${Env:AZP_URL})/_apis/distributedtask/packages/agent?platform=win-x64&`$top=1"
     $packageUrl = $package[0].Value.downloadUrl
 
     Write-Host $packageUrl
@@ -111,6 +111,3 @@ Install-Module -Name Pester -Force -SkipPublisherCheck
 Start-Process pwsh -ArgumentList "-Command 'Install-Module -Name Az -AllowClobber -Scope AllUsers -Force'"
 Start-Process pwsh -ArgumentList "-Command 'az extension add --name azure-devops'"
 Start-Process pwsh -ArgumentList "-Command 'az config set extension.use_dynamic_install=yes_without_prompt'"
-
-Get-Service -Name vsts* | Stop-Service
-Get-Service -Name vsts* | Start-Service

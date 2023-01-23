@@ -22,7 +22,7 @@
         },
         "privateEndpoints": {
             "value": [{
-                "subnetResourceId": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-network-rg/providers/Microsoft.Network/virtualNetworks/prefix-dev-eus-spoke-vnet01/subnets/pe",
+                "subnetResourceId": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-network-rg/providers/Microsoft.Network/virtualNetworks/prefix-dev-eus-spoke-vnet01/subnets/Privated-Endpoints",
                 "service": "blob"
             }]
         },
