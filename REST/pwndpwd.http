@@ -1,6 +1,6 @@
-@account = me@seb2k.de
-@pwd = qwer1
-@key =
+@account = ''
+@pwd = ''
+@key = ''
 @api = https://haveibeenpwned.com/api/v3
 @pwdapi = https://api.pwnedpasswords.com/range
 
