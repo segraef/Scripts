@@ -6,7 +6,7 @@
             "value": "pe-dev-kvlt-001"
         },
         "targetSubnetResourceId": {
-            "value": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-network-rg/providers/Microsoft.Network/virtualNetworks/prefix-dev-eus-spoke-vnet01/subnets/pe"
+            "value": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-network-rg/providers/Microsoft.Network/virtualNetworks/prefix-dev-eus-spoke-vnet01/subnets/Privated-Endpoints"
         },
         "serviceResourceId": {
             "value": "/subscriptions/<<subID>>/resourceGroups/prefix-dev-eus-devops-rg/providers/Microsoft.KeyVault/vaults/prefix-dev-eus-kv-009"

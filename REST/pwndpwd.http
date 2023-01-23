@@ -1,0 +1,19 @@
+@account = ''
+@pwd = ''
+@key = ''
+@api = https://haveibeenpwned.com/api/v3
+@pwdapi = https://api.pwnedpasswords.com/range
+
+# Get all breaches for an account
+# GET {{api}}/breachedaccount/{{account}}
+# Return the full breach model
+# GET {{api}}/breachedaccount/{{account}}?truncateResponse=false
+# Getting all breached sites in the system
+GET {{api}}/breaches
+# Check password
+# GET {{pwdapi}}/{{pwd}}
+# key
+# OPTIONS {{api}}
+hibp-api-key: {{key}}
+
+

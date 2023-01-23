@@ -4,14 +4,14 @@
 
 # Creates directory & download ADO agent install files
 
-su - <<GENERIC_VALUE>> -c "
+su - localAdminUser -c "
 mkdir myagent && cd myagent
 wget https://vstsagentpackage.azureedge.net/agent/2.186.1/vsts-agent-linux-x64-2.186.1.tar.gz
 tar zxvf vsts-agent-linux-x64-2.186.1.tar.gz"
 
 # Unattended install
 
-su - <<GENERIC_VALUE>> -c "
+su - localAdminUser -c "
 ./config.sh --unattended \
   --agent "$(hostname)" \
   --url "https://dev.azure.com/prefix" \
@@ -21,9 +21,9 @@ su - <<GENERIC_VALUE>> -c "
   --replace \
   --acceptTeeEula & wait $!"
 
-cd /home/<<GENERIC_VALUE>>/
+cd /home/localAdminUser/
 #Configure as a service
-sudo ./svc.sh install <<GENERIC_VALUE>>
+sudo ./svc.sh install localAdminUser
 
 #Start svc
 sudo ./svc.sh start
