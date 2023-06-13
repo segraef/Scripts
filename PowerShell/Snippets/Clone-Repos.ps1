@@ -1,12 +1,16 @@
 Param(
-   [string]$destinationFolder = ".",
-   [string]$org = "x00",
-   [string]$project = "Modules"
+    [string]$destinationFolder = ".",
+    [string]$org = "x00"
 )
-
-az devops configure --defaults organization=https://dev.azure.com/$org project=$project
+# Make sure you have the Azure CLI installed and logged in via az login or az devops login
+az devops configure --defaults organization=https://dev.azure.com/$org
+$projects = az devops project list --organization=https://dev.azure.com/$org | ConvertFrom-Json
 $repos = az repos list | ConvertFrom-Json
 
-foreach($repo in $repos) {
-   git clone $($repo.remoteUrl) $destinationFolder/$($repo.Name)
+foreach ($project in $projects.value) {
+    $repos = az repos list --project $($project.name) | ConvertFrom-Json
+    foreach ($repo in $repos) {
+        Write-Output "Repository [$($repo.name)] in project [$($project.name)]"
+        git clone $($repo.remoteUrl) $destinationFolder/$($project.name)/$($repo.name)
+    }
 }
