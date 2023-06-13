@@ -10,7 +10,7 @@ $repos = az repos list | ConvertFrom-Json
 foreach ($project in $projects.value) {
     $repos = az repos list --project $($project.name) | ConvertFrom-Json
     foreach ($repo in $repos) {
-        Write-Host "Repository [$repo.name] in project [$project.name]"
+        Write-Output "Repository [$($repo.name)] in project [$($project.name)]"
         git clone $($repo.remoteUrl) $destinationFolder/$($project.name)/$($repo.name)
     }
 }
