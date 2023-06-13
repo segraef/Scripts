@@ -1,6 +1,6 @@
 Param(
     [string]$destinationFolder = ".",
-    [string]$org = "x00",
+    [string]$org = "x00"
 )
 # Make sure you have the Azure CLI installed and logged in via az login or az devops login
 az devops configure --defaults organization=https://dev.azure.com/$org
