@@ -1,16 +1,24 @@
 Param(
     [string]$destinationFolder = ".",
-    [string]$org = "x00"
+    [string]$org = "123",
+    [array]$projects = (
+        "Modules"
 )
-# Make sure you have the Azure CLI installed and logged in via az login or az devops login
-az devops configure --defaults organization=https://dev.azure.com/$org
-$projects = az devops project list --organization=https://dev.azure.com/$org | ConvertFrom-Json
-$repos = az repos list | ConvertFrom-Json
 
-foreach ($project in $projects.value) {
-    $repos = az repos list --project $($project.name) | ConvertFrom-Json
+# Make sure you have the Azure CLI installed (az extension add --name azure-devops) and logged in via az login or az devops login
+# If you face /_apis authentication issues make sure to login via az login --allow-no-subscriptions
+
+az devops configure --defaults organization=https://dev.azure.com/$org
+# $projects = az devops project list --organization=https://dev.azure.com/$org | ConvertFrom-Json
+
+foreach ($project in $projects) {
+    $repos = az repos list --project $project | ConvertFrom-Json
     foreach ($repo in $repos) {
-        Write-Output "Repository [$($repo.name)] in project [$($project.name)]"
-        git clone $($repo.remoteUrl) $destinationFolder/$($project.name)/$($repo.name)
+        Write-Output "Repository [$($repo.name)] in project [$($project)]"
+            If(!(test-path -PathType container $destinationFolder))
+            {
+                New-Item -ItemType Directory -Path $destinationFolder
+            }
+        git clone $($repo.remoteUrl) $destinationFolder/$($project)/$($repo.name)
     }
 }
