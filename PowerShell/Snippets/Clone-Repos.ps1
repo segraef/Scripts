@@ -22,3 +22,18 @@ foreach ($project in $projects) {
         git clone $($repo.remoteUrl) $destinationFolder/$($project)/$($repo.name)
     }
 }
+
+# clone repos in github
+
+$destinationFolder = "."
+
+$tfrepos = gh repo list azure -L 5000 --json name --jq '.[].name' | Select-String -Pattern "terraform-azurerm-avm"
+$org = 'Azure'
+
+foreach ($repo in $tfrepos) {
+  If (!(test-path -PathType container $destinationFolder/$($org)/$($repo))) {
+    New-Item -ItemType Directory -Path $destinationFolder/$($org)/$($repo)
+  }
+  Write-Output "https://github.com/$org/$repo.git into $destinationFolder/$($org)/$($repo)"
+  git clone "https://github.com/$org/$repo.git" $destinationFolder/$($org)/$($repo)
+}
