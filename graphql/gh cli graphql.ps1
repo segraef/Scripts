@@ -18,6 +18,7 @@ query($filter: String!){
 " --jq ".data.search.edges[].node.url"'
 
 gh search prs --review-requested=Azure/avm-core-team-technical-bicep
+gh search prs --review-requested=Azure/avm-core-team-technical-terraform
 
 gh alias set issues 'api graphql --paginate -f filter="type:issue state:open $1" -f query="
 query($filter: String!){
