@@ -1,10 +1,55 @@
 function Clone-GitHubRepos {
+
+<#
+.SYNOPSIS
+  Clones or updates GitHub repositories for a specified organization.
+
+.DESCRIPTION
+  This script clones or updates GitHub repositories for a specified organization into a specified destination folder.
+
+.PARAMETER destinationFolder
+  The folder where the repositories will be cloned or updated.
+
+.PARAMETER org
+  The GitHub organization name.
+
+.PARAMETER repos
+  The list of repositories to clone or update.
+
+.INPUTS
+  None
+
+.OUTPUTS
+  None
+
+.NOTES
+  Version:        1.0
+  Author:         Sebastian Graef
+  Creation Date:  22-03-2025
+  Purpose/Change: Initial script development
+
+.EXAMPLE
+  Clone-GitHubRepos -destinationFolder "Git/Folder1" -org "Azure" -repos @("repo1", "repo2")
+
+.EXAMPLE
+  $tfrepos = gh repo list azure -L 5000 --json name --jq '.[].name' | Select-String -Pattern "terraform-azurerm-avm"
+  Clone-GitHubRepos -repos $tfrepos
+#>
+
+    #region Parameters
+
     [CmdletBinding()]
-    Param(
-        [string]$destinationFolder = "/Users/segraef/Git/GitHub",
-        [string]$org = 'Azure',
+    param
+    (
+        [Parameter()]
+        [string]$destinationFolder,
+        [Parameter()]
+        [string]$org,
+        [Parameter()]
         [string[]]$repos
     )
+
+    #endregion
 
     Write-Output "Found $($repos.Count) repositories."
     $confirmation = Read-Host "Do you want to proceed with processing these repositories? (y/n)"
@@ -33,7 +78,3 @@ function Clone-GitHubRepos {
         }
     }
 }
-
-# Example usage:
-$tfrepos = gh repo list azure -L 5000 --json name --jq '.[].name' | Select-String -Pattern "terraform-azurerm-avm"
-Clone-GitHubRepos -repos $tfrepos
