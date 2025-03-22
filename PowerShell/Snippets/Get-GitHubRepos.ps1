@@ -1,4 +1,4 @@
-function Clone-GitHubRepos {
+function Get-GitHubRepos {
 
 <#
 .SYNOPSIS
@@ -29,11 +29,11 @@ function Clone-GitHubRepos {
   Purpose/Change: Initial script development
 
 .EXAMPLE
-  Clone-GitHubRepos -destinationFolder "Git/Folder1" -org "Azure" -repos @("repo1", "repo2")
+  Get-GitHubRepos -destinationFolder "Git/Folder1" -org "Azure" -repos @("repo1", "repo2")
 
 .EXAMPLE
   $tfrepos = gh repo list azure -L 5000 --json name --jq '.[].name' | Select-String -Pattern "terraform-azurerm-avm"
-  Clone-GitHubRepos -repos $tfrepos
+  Get-GitHubRepos -repos $tfrepos
 #>
 
     #region Parameters
