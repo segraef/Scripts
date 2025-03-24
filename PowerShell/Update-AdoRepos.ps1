@@ -44,14 +44,14 @@ function Update-AdoRepos {
   )
 
   # Function to get all projects in the organization
-  function Get-AdoProjects {
+  function Get-AdoProjects($organization,$pat) {
     $uri = "https://dev.azure.com/$organization/_apis/projects?api-version=6.0"
     $response = Invoke-RestMethod -Uri $uri -Headers @{Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$pat")) }
     return $response.value
   }
 
   # Function to get repositories for a given project
-  function Get-AdoRepositories($project) {
+  function Get-AdoRepositories($organization,$pat,$project) {
     $uri = "https://dev.azure.com/$organization/$project/_apis/git/repositories?api-version=6.0"
     $uri = $uri -replace " ", "%20"
     Write-Output $uri
@@ -83,7 +83,7 @@ function Update-AdoRepos {
 
   # Main script
   Write-Output "Getting projects ..."
-  $projects = Get-AdoProjects
+  $projects = Get-AdoProjects -organization $organization -pat $pat
   Write-Output "Found $($projects.Count) projects: $($projects.name)"
   foreach ($project in $projects) {
     $projectFolder = "$destinationFolder/$($project.name)"
@@ -95,7 +95,7 @@ function Update-AdoRepos {
     }
 
     Write-Output "Getting repos for $($project.name) ..."
-    $repos = Get-AdoRepositories -project $project.name
+    $repos = Get-AdoRepositories -organization $organization -pat $pat -project $project.name
     Write-Output "Found $($repos.Count) repos: $($repos.name)"
     Read-Host "Press Enter to continue"
     foreach ($repo in $repos) {
