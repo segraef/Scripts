@@ -1,6 +1,6 @@
-function Create-PullRequests {
+function Add-PullRequests {
 
-    [CmdletBinding(SupportsShouldProcess)]
+    [CmdletBinding()]
     Param(
         [Parameter()]
         [string]$org = "x00",
