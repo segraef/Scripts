@@ -1,6 +1,6 @@
 Param(
    [string]$org = "x00",
-   [string]$project = "ESLZ Modules",
+   [string]$project = "Modules",
    [string]$token = "token",
    [string]$branchName = "users/segraef/provider-upgrade"
 )

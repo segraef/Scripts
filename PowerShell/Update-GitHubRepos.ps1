@@ -1,4 +1,4 @@
-function Get-GitHubRepos {
+function Update-GitHubRepos {
 
 <#
 .SYNOPSIS
@@ -10,7 +10,7 @@ function Get-GitHubRepos {
 .PARAMETER destinationFolder
   The folder where the repositories will be cloned or updated.
 
-.PARAMETER org
+.PARAMETER organization
   The GitHub organization name.
 
 .PARAMETER repos
@@ -29,7 +29,7 @@ function Get-GitHubRepos {
   Purpose/Change: Initial script development
 
 .EXAMPLE
-  Get-GitHubRepos -destinationFolder "Git/Folder1" -org "Azure" -repos @("repo1", "repo2")
+  Get-GitHubRepos -destinationFolder "Git/Folder1" -organization "Azure" -repos @("repo1", "repo2")
 
 .EXAMPLE
   $tfrepos = gh repo list azure -L 5000 --json name --jq '.[].name' | Select-String -Pattern "terraform-azurerm-avm"
@@ -44,7 +44,7 @@ function Get-GitHubRepos {
         [Parameter()]
         [string]$destinationFolder,
         [Parameter()]
-        [string]$org,
+        [string]$organization,
         [Parameter()]
         [string[]]$repos
     )
@@ -58,17 +58,17 @@ function Get-GitHubRepos {
     }
 
     foreach ($repo in $repos) {
-        $repoPath = Join-Path -Path $destinationFolder -ChildPath "$org/$repo"
+        $repoPath = Join-Path -Path $destinationFolder -ChildPath "$organization/$repo"
         If (!(Test-Path -Path $repoPath)) {
             New-Item -ItemType Directory -Path $repoPath -Force
             Set-Location -Path $repoPath
             Write-Output "Cloning repository $repo into $repoPath."
-            git clone "https://github.com/$org/$repo.git"
+            git clone "https://github.com/$organization/$repo.git"
         } else {
             Write-Output "Directory $repoPath already exists. Updating only."
             if ((Get-ChildItem -Path $repoPath).Count -eq 0) {
                 Write-Output "Cloning repository $repo into $repoPath."
-                git clone "https://github.com/$org/$repo.git"
+                git clone "https://github.com/$organization/$repo.git"
             } else {
                 Write-Output "Pulling latest changes for $repo."
                 Set-Location -Path $repoPath
