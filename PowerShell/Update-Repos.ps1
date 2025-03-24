@@ -32,7 +32,7 @@
   .EXAMPLE
     $tfrepos = gh repo list azure -L 5000 --json name --jq '.[].name' | Select-String -Pattern "terraform-azurerm-avm"
     Get-GitHubRepos -repos $tfrepos
-  #>
+#>
 
 function Update-GitHubRepos {
 
@@ -56,20 +56,26 @@ function Update-GitHubRepos {
   foreach ($repo in $repos) {
     $repoPath = Join-Path -Path $destinationFolder -ChildPath "$organization/$repo"
     If (!(Test-Path -Path $repoPath)) {
-      New-Item -ItemType Directory -Path $repoPath -Force
-      Set-Location -Path $repoPath
-      Write-Output "Cloning repository $repo into $repoPath."
-      git clone "https://github.com/$organization/$repo.git"
+      if ($PSCmdlet.ShouldProcess("Cloning repository $repo into $repoPath")) {
+        New-Item -ItemType Directory -Path $repoPath -Force
+        Set-Location -Path $repoPath
+        Write-Output "Cloning repository $repo into $repoPath."
+        git clone "https://github.com/$organization/$repo.git"
+      }
     } else {
       Write-Output "Directory $repoPath already exists. Updating only."
       if ((Get-ChildItem -Path $repoPath).Count -eq 0) {
-        Write-Output "Cloning repository $repo into $repoPath."
-        git clone "https://github.com/$organization/$repo.git"
+        if ($PSCmdlet.ShouldProcess("Cloning repository $repo into $repoPath")) {
+          Write-Output "Cloning repository $repo into $repoPath."
+          git clone "https://github.com/$organization/$repo.git"
+        }
       } else {
-        Write-Output "Pulling latest changes for $repo."
-        Set-Location -Path $repoPath
-        git checkout main
-        git pull
+        if ($PSCmdlet.ShouldProcess("Pulling latest changes for $repo")) {
+          Write-Output "Pulling latest changes for $repo."
+          Set-Location -Path $repoPath
+          git checkout main
+          git pull
+        }
       }
     }
   }
@@ -144,14 +150,18 @@ function Update-AdoRepos {
     $repoFolder = "$projectFolder/$repoName"
 
     if (-not (Test-Path -Path $repoFolder)) {
-      Write-Output "Cloning $($repo.name)"
-      git clone $repoUrl $repoFolder
+      if ($PSCmdlet.ShouldProcess("Cloning $($repo.name)")) {
+        Write-Output "Cloning $($repo.name)"
+        git clone $repoUrl $repoFolder
+      }
     } else {
-      Write-Output "Pulling/Refreshing $($repo.name)"
-      Set-Location -Path $repoFolder
-      git checkout main
-      git pull
-      Set-Location -Path $projectFolder
+      if ($PSCmdlet.ShouldProcess("Pulling/Refreshing $($repo.name)")) {
+        Write-Output "Pulling/Refreshing $($repo.name)"
+        Set-Location -Path $repoFolder
+        git checkout main
+        git pull
+        Set-Location -Path $projectFolder
+      }
     }
   }
 
@@ -162,8 +172,10 @@ function Update-AdoRepos {
   foreach ($project in $projects) {
     $projectFolder = "$destinationFolder/$($project.name)"
     if (-not (Test-Path -Path $projectFolder)) {
-      Write-Output "Creating folder $projectFolder"
-      New-Item -ItemType Directory -Path $projectFolder
+      if ($PSCmdlet.ShouldProcess("Creating folder $projectFolder")) {
+        Write-Output "Creating folder $projectFolder"
+        New-Item -ItemType Directory -Path $projectFolder
+      }
     }
 
     Write-Output "Getting repos for $($project.name) ..."
@@ -221,7 +233,7 @@ function Update-AdoRepos {
 
 function Update-Repos {
 
-  [CmdletBinding()]
+  [CmdletBinding(SupportsShouldProcess)]
   param
   (
     [Parameter()]

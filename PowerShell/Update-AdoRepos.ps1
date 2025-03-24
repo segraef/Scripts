@@ -1,6 +1,4 @@
-function Update-AdoRepos {
-
-  <#
+<#
 .SYNOPSIS
   Script to clone or update Azure DevOps repositories for all projects in an organization.
 
@@ -32,9 +30,16 @@ function Update-AdoRepos {
   CloneUpdate-AdoRepos.ps1 -organization "yourOrg" -destinationFolder "C:\Repos" -pat "yourPAT"
 #>
 
-  param (
+function Update-AdoRepos {
+
+  [CmdletBinding(SupportsShouldProcess)]
+  param
+  (
+    [Parameter()]
     [string]$organization,
+    [Parameter()]
     [string]$destinationFolder,
+    [Parameter()]
     [string]$pat
   )
 
@@ -61,14 +66,18 @@ function Update-AdoRepos {
     $repoFolder = "$projectFolder/$repoName"
 
     if (-not (Test-Path -Path $repoFolder)) {
-      Write-Output "Cloning $($repo.name)"
-      git clone $repoUrl $repoFolder
+      if ($PSCmdlet.ShouldProcess("Cloning $($repo.name)")) {
+        Write-Output "Cloning $($repo.name)"
+        git clone $repoUrl $repoFolder
+      }
     } else {
-      Write-Output "Pulling/Refreshing $($repo.name)"
-      Set-Location -Path $repoFolder
-      git checkout main
-      git pull
-      Set-Location -Path $projectFolder
+      if ($PSCmdlet.ShouldProcess("Pulling/Refreshing $($repo.name)")) {
+        Write-Output "Pulling/Refreshing $($repo.name)"
+        Set-Location -Path $repoFolder
+        git checkout main
+        git pull
+        Set-Location -Path $projectFolder
+      }
     }
   }
 
@@ -79,8 +88,10 @@ function Update-AdoRepos {
   foreach ($project in $projects) {
     $projectFolder = "$destinationFolder/$($project.name)"
     if (-not (Test-Path -Path $projectFolder)) {
-      Write-Output "Creating folder $projectFolder"
-      New-Item -ItemType Directory -Path $projectFolder
+      if ($PSCmdlet.ShouldProcess("Creating folder $projectFolder")) {
+        Write-Output "Creating folder $projectFolder"
+        New-Item -ItemType Directory -Path $projectFolder
+      }
     }
 
     Write-Output "Getting repos for $($project.name) ..."
