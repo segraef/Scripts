@@ -5,7 +5,7 @@
   .DESCRIPTION
     This script clones or updates GitHub repositories for a specified organization into a specified destination folder.
 
-  .PARAMETER destinationFolder
+  .PARAMETER targetFolder
     The folder where the repositories will be cloned or updated.
 
   .PARAMETER organization
@@ -27,7 +27,7 @@
     Purpose/Change: Initial script development
 
   .EXAMPLE
-    Get-GitHubRepos -destinationFolder "Git/Folder1" -organization "Azure" -repos @("repo1", "repo2")
+    Get-GitHubRepos -targetFolder "Git/Folder1" -organization "Azure" -repos @("repo1", "repo2")
 
   .EXAMPLE
     $tfrepos = gh repo list azure -L 5000 --json name --jq '.[].name' | Select-String -Pattern "terraform-azurerm-avm"
@@ -40,7 +40,7 @@ function Update-GitHubRepos {
   param
   (
     [Parameter()]
-    [string]$destinationFolder,
+    [string]$targetFolder,
     [Parameter()]
     [string]$organization,
     [Parameter()]
@@ -54,7 +54,7 @@ function Update-GitHubRepos {
   }
 
   foreach ($repo in $repos) {
-    $repoPath = Join-Path -Path $destinationFolder -ChildPath "$organization/$repo"
+    $repoPath = Join-Path -Path $targetFolder -ChildPath "$organization/$repo"
     If (!(Test-Path -Path $repoPath)) {
       if ($PSCmdlet.ShouldProcess("Cloning repository $repo into $repoPath")) {
         New-Item -ItemType Directory -Path $repoPath -Force
@@ -92,7 +92,7 @@ function Update-GitHubRepos {
 .PARAMETER organization
   The Azure DevOps organization name.
 
-.PARAMETER destinationFolder
+.PARAMETER targetFolder
   The folder where the repositories will be cloned or updated.
 
 .PARAMETER pat
@@ -111,7 +111,7 @@ function Update-GitHubRepos {
   Purpose/Change: Initial script development
 
 .EXAMPLE
-  CloneUpdate-AdoRepos.ps1 -organization "yourOrg" -destinationFolder "C:\Repos" -pat "yourPAT"
+  CloneUpdate-AdoRepos.ps1 -organization "yourOrg" -targetFolder "C:\Repos" -pat "yourPAT"
 #>
 
 function Update-AdoRepos {
@@ -122,7 +122,7 @@ function Update-AdoRepos {
     [Parameter()]
     [string]$organization,
     [Parameter()]
-    [string]$destinationFolder,
+    [string]$targetFolder,
     [Parameter()]
     [string]$pat
   )
@@ -170,7 +170,7 @@ function Update-AdoRepos {
   $projects = Get-AdoProjects -organization $organization -pat $pat
   Write-Output "Found $($projects.Count) projects: $($projects.name)"
   foreach ($project in $projects) {
-    $projectFolder = "$destinationFolder/$($project.name)"
+    $projectFolder = "$targetFolder/$($project.name)"
     if (-not (Test-Path -Path $projectFolder)) {
       if ($PSCmdlet.ShouldProcess("Creating folder $projectFolder")) {
         Write-Output "Creating folder $projectFolder"
@@ -246,11 +246,17 @@ function Update-Repos {
     [string]$pat
   )
 
+  # Resolve destinationFolder to an absolute path
+  if (-not $destinationFolder) {
+    throw "The destinationFolder parameter cannot be empty."
+  }
+  $destinationFolder = Resolve-Path -Path $destinationFolder | ForEach-Object { $_.Path }
+
   if ($pat) {
     Write-Output "- Updating Azure DevOps repositories"
-    Update-AdoRepos -organization $organization -destinationFolder $destinationFolder -pat $pat
+    Update-AdoRepos -organization $organization -targetFolder $destinationFolder -pat $pat
   } else {
     Write-Output "- Updating GitHub repositories"
-    Update-GitHubRepos -destinationFolder $destinationFolder -organization $organization -repos $repos
+    Update-GitHubRepos -targetFolder $destinationFolder -organization $organization -repos $repos
   }
 }
