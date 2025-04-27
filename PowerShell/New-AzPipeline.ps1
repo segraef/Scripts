@@ -1,5 +1,5 @@
 <#
-.SYNOPSIS
+.SYNOPSIS2
   Create Azure Pipelines and Build Validation Checks.
 
 .DESCRIPTION
