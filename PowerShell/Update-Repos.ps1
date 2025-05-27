@@ -124,18 +124,20 @@ function Update-AdoRepos {
     [Parameter()]
     [string]$targetFolder,
     [Parameter()]
-    [string]$pat
+    [string]$pat,
+    [Parameter()]
+    [bool]$force = $false
   )
 
   # Function to get all projects in the organization
-  function Get-AdoProjects($organization,$pat) {
+  function Get-AdoProjects($organization, $pat) {
     $uri = "https://dev.azure.com/$organization/_apis/projects?api-version=6.0"
     $response = Invoke-RestMethod -Uri $uri -Headers @{Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$pat")) }
     return $response.value
   }
 
   # Function to get repositories for a given project
-  function Get-AdoRepositories($organization,$pat,$project) {
+  function Get-AdoRepositories($organization, $pat, $project) {
     $uri = "https://dev.azure.com/$organization/$project/_apis/git/repositories?api-version=6.0"
     $uri = $uri -replace " ", "%20"
     Write-Output $uri
@@ -180,14 +182,24 @@ function Update-AdoRepos {
 
     Write-Output "Getting repos for $($project.name) ..."
     $repos = Get-AdoRepositories -organization $organization -pat $pat -project $project.name
-    Write-Output "Found $($repos.Count) repos: $($repos.name)"
-    Read-Host "Press Enter to continue"
-    foreach ($repo in $repos) {
-      $response = Read-Host "Do you want to clone/update the repo $($repo.name)? (y/n)"
-      if ($response -eq 'y') {
-        CloneOrUpdateRepo -repo $repo -projectFolder $projectFolder
-      } else {
-        Write-Output "Skipping $($repo.name)"
+    $responseRepos = Read-Host "Found $($repos.Count) repos: $($repos.name). Do you want to clone/update all of them? (y/n)"
+    # skip if $responseRepos is not 'y'
+    if ($responseRepos -ne 'y') {
+      Write-Output "Skipping all repos for $($project.name)"
+      continue
+    } else {
+      foreach ($repo in $repos) {
+        if ($force) {
+          Write-Output "Cloning/updating $($repo.name)"
+          CloneOrUpdateRepo -repo $repo -projectFolder $projectFolder
+        } else {
+          $response = Read-Host "Do you want to clone/update the repo $($repo.name)? (y/n)"
+          if ($response -eq 'y') {
+            CloneOrUpdateRepo -repo $repo -projectFolder $projectFolder
+          } else {
+            Write-Output "Skipping $($repo.name)"
+          }
+        }
       }
     }
   }
@@ -243,7 +255,9 @@ function Update-Repos {
     [Parameter()]
     [string[]]$repos,
     [Parameter()]
-    [string]$pat
+    [string]$pat,
+    [Parameter()]
+    [bool]$force = $false
   )
 
   # Resolve destinationFolder to an absolute path
@@ -254,7 +268,7 @@ function Update-Repos {
 
   if ($pat) {
     Write-Output "- Updating Azure DevOps repositories"
-    Update-AdoRepos -organization $organization -targetFolder $destinationFolder -pat $pat
+    Update-AdoRepos -organization $organization -targetFolder $destinationFolder -pat $pat -force $force
   } else {
     Write-Output "- Updating GitHub repositories"
     Update-GitHubRepos -targetFolder $destinationFolder -organization $organization -repos $repos
