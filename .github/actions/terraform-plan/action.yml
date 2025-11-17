@@ -1,0 +1,163 @@
+name: 'Terraform Plan'
+description: 'Run Terraform plan and save output'
+inputs:
+  working_directory:
+    description: 'Working directory for Terraform'
+    required: true
+  subscription_id:
+    description: 'Azure subscription ID'
+    required: true
+  environment:
+    description: 'Environment name (e.g., nonprod, prod)'
+    required: true
+  additional_parameters:
+    description: 'Additional Terraform plan parameters'
+    required: false
+    default: ''
+  tf_debug:
+    description: 'Terraform debug level (e.g., INFO, DEBUG)'
+    required: false
+    default: ''
+  unlock_state:
+    description: 'Whether to force unlock state'
+    required: false
+    default: 'false'
+  lock_id:
+    description: 'Lock ID to force unlock'
+    required: false
+    default: ''
+
+outputs:
+  plan_file:
+    description: 'Path to the plan file'
+    value: ${{ steps.plan.outputs.plan_file }}
+  changes_detected:
+    description: 'Whether changes were detected'
+    value: ${{ steps.detect.outputs.changes }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Force Unlock State
+      if: inputs.unlock_state == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      env:
+        TF_IN_AUTOMATION: 'true'
+        ARM_USE_OIDC: 'true'
+        ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+        ARM_TENANT_ID: ${{ env.TENANT_ID }}
+      run: |
+        echo "Force unlocking Terraform state..."
+        terraform force-unlock -force ${{ inputs.lock_id }}
+
+    - name: Create Plan Directory
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        mkdir -p ${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan
+        echo "Created plan directory at: ${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan"
+
+    - name: Terraform Plan
+      id: plan
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      env:
+        TF_IN_AUTOMATION: 'true'
+        TF_LOG: ${{ inputs.tf_debug }}
+        ARM_USE_OIDC: 'true'
+        ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+        ARM_TENANT_ID: ${{ env.TENANT_ID }}
+      run: |
+        echo "Environment variables:"
+        env | grep -E '^(ARM_|TF_|GITHUB_)' | sort
+        
+        echo -e "\n\nExecuting Terraform Plan..."
+        terraform plan ${{ inputs.additional_parameters }} \
+          -out=${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan/state.tfplan
+        
+        exit_code=$?
+        if [ $exit_code -ne 0 ]; then
+          echo "Terraform plan failed with exit code: $exit_code"
+          exit 1
+        fi
+        
+        echo "plan_file=${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan/state.tfplan" >> $GITHUB_OUTPUT
+
+    - name: Terraform Show JSON
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        echo "Generating JSON output of plan..."
+        terraform show -json "${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan/state.tfplan" \
+          > "${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan/state.tfplan.json" || true
+
+    - name: Terraform Show Output
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        echo "Generating text output of plan..."
+        terraform show "${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan/state.tfplan" -no-color \
+          > "${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan/state.tfplan.stdout" || true
+
+    - name: Detect Changes
+      id: detect
+      shell: bash
+      run: |
+        if [ -f "${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan/state.tfplan.json" ]; then
+          echo "Analyzing plan for changes..."
+          
+          # Count resource changes (excluding no-op and read)
+          resource_changes=$(jq -r '[.resource_changes[] | select(.change.actions != ["no-op"] and .change.actions != ["read"])] | length' \
+            "${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan/state.tfplan.json")
+          
+          # Count output changes
+          output_changes=$(jq -r '[.output_changes | to_entries[] | select(.value.actions != ["no-op"])] | length' \
+            "${{ github.workspace }}/plan_${{ inputs.environment }}/stagePlan/state.tfplan.json")
+          
+          echo "Resource changes: $resource_changes"
+          echo "Output changes: $output_changes"
+          
+          if [ "$resource_changes" -gt 0 ] || [ "$output_changes" -gt 0 ]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "Terraform changes detected in plan"
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "No Terraform changes detected in plan"
+          fi
+        else
+          echo "Plan JSON file not found"
+          echo "changes=unknown" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Copy Configuration Files
+      shell: bash
+      run: |
+        echo "Copying Terraform files to plan directory..."
+        
+        # Copy all Terraform files
+        if [ -d "${{ inputs.working_directory }}" ]; then
+          # Copy .tf files
+          find "${{ inputs.working_directory }}" -name "*.tf" -exec cp {} "${{ github.workspace }}/plan_${{ inputs.environment }}/" \;
+          
+          # Copy .hcl files
+          find "${{ inputs.working_directory }}" -name "*.hcl" -exec cp {} "${{ github.workspace }}/plan_${{ inputs.environment }}/" \;
+          
+          # Copy config directory if it exists
+          if [ -d "${{ inputs.working_directory }}/config" ]; then
+            cp -r "${{ inputs.working_directory }}/config" "${{ github.workspace }}/plan_${{ inputs.environment }}/"
+          fi
+          
+          # Copy .lib directory if it exists
+          if [ -d "${{ inputs.working_directory }}/.lib" ]; then
+            cp -r "${{ inputs.working_directory }}/.lib" "${{ github.workspace }}/plan_${{ inputs.environment }}/"
+          fi
+          
+          # Copy scripts directory if it exists
+          if [ -d "${{ inputs.working_directory }}/scripts" ]; then
+            cp -r "${{ inputs.working_directory }}/scripts" "${{ github.workspace }}/plan_${{ inputs.environment }}/"
+          fi
+          
+          echo "Files copied successfully"
+          ls -la "${{ github.workspace }}/plan_${{ inputs.environment }}/"
+        fi

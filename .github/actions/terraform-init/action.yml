@@ -1,0 +1,119 @@
+name: 'Terraform Init'
+description: 'Initialize Terraform with Azure backend'
+inputs:
+  working_directory:
+    description: 'Working directory for Terraform'
+    required: true
+  backend_subscription_id:
+    description: 'Azure subscription ID for backend storage'
+    required: true
+  backend_resource_group:
+    description: 'Resource group for backend storage'
+    required: true
+  backend_storage_account:
+    description: 'Storage account for backend'
+    required: true
+  backend_container:
+    description: 'Storage container for state files'
+    required: true
+    default: 'tfstate'
+  backend_key:
+    description: 'State file key/name'
+    required: true
+  subscription_id:
+    description: 'Target Azure subscription ID'
+    required: true
+  terraform_version:
+    description: 'Terraform version to use'
+    required: false
+    default: '1.11.2'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Create backend.tf
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        cat > backend.tf <<EOF
+        terraform {
+          backend "azurerm" {
+            subscription_id      = "${{ inputs.backend_subscription_id }}"
+            resource_group_name  = "${{ inputs.backend_resource_group }}"
+            storage_account_name = "${{ inputs.backend_storage_account }}"
+            container_name       = "${{ inputs.backend_container }}"
+            key                  = "${{ inputs.backend_key }}"
+          }
+        }
+        EOF
+        echo "Created backend.tf:"
+        cat backend.tf
+
+    - name: Set Terraform Version
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        if [ -f .terraform-version ]; then
+          echo "Removing existing .terraform-version file"
+          rm -f .terraform-version
+        fi
+        
+        echo "${{ inputs.terraform_version }}" > .terraform-version
+        echo "Created .terraform-version:"
+        cat .terraform-version
+        
+        echo "Current directory contents:"
+        ls -la
+
+    - name: Check Terraform Version and Lockfile
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        if [ -f .terraform-version ]; then
+          echo ".terraform-version file found:"
+          cat .terraform-version
+        fi
+        
+        echo "Terraform version:"
+        terraform version
+        
+        if [ -f .terraform.lock.hcl ]; then
+          echo ".terraform.lock.hcl file found:"
+          cat .terraform.lock.hcl
+        else
+          echo "No .terraform.lock.hcl file found"
+        fi
+
+    - name: Configure Git for Module Access
+      shell: bash
+      run: |
+        git config --global credential.helper store
+        echo "https://${{ github.actor }}:${{ github.token }}@github.com" > ~/.git-credentials
+
+    - name: Terraform Init
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      env:
+        TF_IN_AUTOMATION: 'true'
+        ARM_USE_MSI: 'false'
+        ARM_USE_OIDC: 'true'
+        ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+        ARM_TENANT_ID: ${{ env.TENANT_ID }}
+      run: |
+        echo "All Environment Variables:"
+        env | sort
+        
+        echo -e "\n\nSetting Azure subscription: ${{ inputs.backend_subscription_id }}"
+        az account set -s ${{ inputs.backend_subscription_id }}
+        az account show
+        
+        echo -e "\n\nInitializing Terraform..."
+        terraform init
+        
+        echo -e "\n\nContents of Terraform Providers Lock File:"
+        if [ -f .terraform.lock.hcl ]; then
+          cat .terraform.lock.hcl
+        fi
+        
+        echo -e "\n\nList Terraform Providers:"
+        terraform providers

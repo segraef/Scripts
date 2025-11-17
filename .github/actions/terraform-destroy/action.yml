@@ -1,0 +1,51 @@
+name: 'Terraform Destroy'
+description: 'Destroy Terraform-managed infrastructure'
+inputs:
+  working_directory:
+    description: 'Working directory for Terraform'
+    required: true
+  subscription_id:
+    description: 'Azure subscription ID'
+    required: true
+  additional_parameters:
+    description: 'Additional Terraform destroy parameters'
+    required: false
+    default: ''
+  tf_debug:
+    description: 'Terraform debug level (e.g., INFO, DEBUG)'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Terraform Version
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        echo "Terraform version:"
+        terraform version
+
+    - name: Terraform Destroy
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      env:
+        TF_IN_AUTOMATION: 'true'
+        TF_LOG: ${{ inputs.tf_debug }}
+        ARM_USE_OIDC: 'true'
+        ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+        ARM_TENANT_ID: ${{ env.TENANT_ID }}
+      run: |
+        echo "Environment variables:"
+        env | grep -E '^(ARM_|TF_|GITHUB_)' | sort
+        
+        echo -e "\n\nWARNING: Destroying infrastructure..."
+        terraform destroy ${{ inputs.additional_parameters }} -input=false -auto-approve
+        
+        exit_code=$?
+        if [ $exit_code -ne 0 ]; then
+          echo "Terraform destroy failed with exit code: $exit_code"
+          exit 1
+        fi
+        
+        echo "Terraform destroy completed successfully"

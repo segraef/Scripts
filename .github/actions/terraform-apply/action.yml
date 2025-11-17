@@ -1,0 +1,59 @@
+name: 'Terraform Apply'
+description: 'Apply Terraform plan'
+inputs:
+  working_directory:
+    description: 'Working directory for Terraform'
+    required: true
+  plan_file:
+    description: 'Path to the plan file to apply'
+    required: true
+  subscription_id:
+    description: 'Azure subscription ID'
+    required: true
+  tf_debug:
+    description: 'Terraform debug level (e.g., INFO, DEBUG)'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Verify Plan File
+      shell: bash
+      run: |
+        if [ ! -f "${{ inputs.working_directory }}/${{ inputs.plan_file }}" ]; then
+          echo "Error: Plan file not found at ${{ inputs.working_directory }}/${{ inputs.plan_file }}"
+          exit 1
+        fi
+        echo "Plan file found: ${{ inputs.working_directory }}/${{ inputs.plan_file }}"
+
+    - name: Terraform Version
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        echo "Terraform version:"
+        terraform version
+
+    - name: Terraform Apply
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      env:
+        TF_IN_AUTOMATION: 'true'
+        TF_LOG: ${{ inputs.tf_debug }}
+        ARM_USE_OIDC: 'true'
+        ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+        ARM_TENANT_ID: ${{ env.TENANT_ID }}
+      run: |
+        echo "Environment variables:"
+        env | grep -E '^(ARM_|TF_|GITHUB_)' | sort
+        
+        echo -e "\n\nApplying Terraform plan..."
+        terraform apply -input=false -auto-approve "${{ inputs.plan_file }}"
+        
+        exit_code=$?
+        if [ $exit_code -ne 0 ]; then
+          echo "Terraform apply failed with exit code: $exit_code"
+          exit 1
+        fi
+        
+        echo "Terraform apply completed successfully"

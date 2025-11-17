@@ -1,0 +1,261 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform Action'
+        required: true
+        type: choice
+        options:
+          - apply
+          - destroy
+        default: apply
+      environment:
+        description: 'Target Environment'
+        required: true
+        type: choice
+        options:
+          - nonprod
+          - prod
+
+env:
+  TENANT_ID: ${{ secrets.TENANT_ID }}
+  TERRAFORM_VERSION: ${{ secrets.TERRAFORM_VERSION }}
+
+jobs:
+  plan:
+    name: Plan - ${{ matrix.env.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env:
+          - name: nonprod
+            subscription_id: ${{ secrets.NONPROD_SUBSCRIPTION_ID }}
+          - name: prod
+            subscription_id: ${{ secrets.PROD_SUBSCRIPTION_ID }}
+      fail-fast: false
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ matrix.env.subscription_id }}
+      ARM_TENANT_ID: ${{ env.TENANT_ID }}
+      ARM_USE_AZUREAD: true
+      ARM_USE_OIDC: true
+      TF_IN_AUTOMATION: true
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.TENANT_ID }}
+          subscription-id: ${{ matrix.env.subscription_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Add Storage Firewall Rule
+        uses: ./.github/actions/storage-firewall
+        with:
+          subscription_id: ${{ secrets.TFSTATE_SUBSCRIPTION_ID }}
+          storage_account: ${{ secrets.TFSTATE_STORAGE_ACCOUNT }}
+          resource_group: ${{ secrets.TFSTATE_RESOURCE_GROUP }}
+          mode: 'on'
+
+      - name: Terraform Init
+        uses: ./.github/actions/terraform-init
+        with:
+          working_directory: ${{ github.workspace }}/deployments
+          backend_subscription_id: ${{ secrets.TFSTATE_SUBSCRIPTION_ID }}
+          backend_resource_group: ${{ secrets.TFSTATE_RESOURCE_GROUP }}
+          backend_storage_account: ${{ secrets.TFSTATE_STORAGE_ACCOUNT }}
+          backend_container: ${{ secrets.TFSTATE_CONTAINER }}
+          backend_key: "${{ matrix.env.name }}.tfstate"
+          subscription_id: ${{ matrix.env.subscription_id }}
+
+      - name: Terraform Plan
+        uses: ./.github/actions/terraform-plan
+        with:
+          working_directory: ${{ github.workspace }}/deployments
+          subscription_id: ${{ matrix.env.subscription_id }}
+          environment: ${{ matrix.env.name }}
+
+      - name: Remove Storage Firewall Rule
+        if: always()
+        uses: ./.github/actions/storage-firewall
+        with:
+          subscription_id: ${{ secrets.TFSTATE_SUBSCRIPTION_ID }}
+          storage_account: ${{ secrets.TFSTATE_STORAGE_ACCOUNT }}
+          resource_group: ${{ secrets.TFSTATE_RESOURCE_GROUP }}
+          mode: 'off'
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan_${{ matrix.env.name }}
+          path: |
+            ${{ github.workspace }}/plan_${{ matrix.env.name }}/
+            ${{ github.workspace }}/deployments/**/*.tf
+            ${{ github.workspace }}/deployments/**/*.hcl
+            ${{ github.workspace }}/deployments/config/**/*
+          retention-days: 30
+
+  apply:
+    name: Apply - ${{ matrix.env.name }}
+    needs: plan
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.action == 'apply')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env:
+          - name: nonprod
+            subscription_id: ${{ secrets.NONPROD_SUBSCRIPTION_ID }}
+          - name: prod
+            subscription_id: ${{ secrets.PROD_SUBSCRIPTION_ID }}
+      fail-fast: false
+    environment:
+      name: ${{ matrix.env.name }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ matrix.env.subscription_id }}
+      ARM_TENANT_ID: ${{ env.TENANT_ID }}
+      ARM_USE_AZUREAD: true
+      ARM_USE_OIDC: true
+      TF_IN_AUTOMATION: true
+    steps:
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: plan_${{ matrix.env.name }}
+          path: ${{ github.workspace }}/plan_${{ matrix.env.name }}
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.TENANT_ID }}
+          subscription-id: ${{ matrix.env.subscription_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Add Storage Firewall Rule
+        uses: ./.github/actions/storage-firewall
+        with:
+          subscription_id: ${{ secrets.TFSTATE_SUBSCRIPTION_ID }}
+          storage_account: ${{ secrets.TFSTATE_STORAGE_ACCOUNT }}
+          resource_group: ${{ secrets.TFSTATE_RESOURCE_GROUP }}
+          mode: 'on'
+
+      - name: Terraform Init
+        uses: ./.github/actions/terraform-init
+        with:
+          working_directory: ${{ github.workspace }}/plan_${{ matrix.env.name }}
+          backend_subscription_id: ${{ secrets.TFSTATE_SUBSCRIPTION_ID }}
+          backend_resource_group: ${{ secrets.TFSTATE_RESOURCE_GROUP }}
+          backend_storage_account: ${{ secrets.TFSTATE_STORAGE_ACCOUNT }}
+          backend_container: ${{ secrets.TFSTATE_CONTAINER }}
+          backend_key: "${{ matrix.env.name }}.tfstate"
+          subscription_id: ${{ matrix.env.subscription_id }}
+
+      - name: Terraform Apply
+        uses: ./.github/actions/terraform-apply
+        with:
+          working_directory: ${{ github.workspace }}/plan_${{ matrix.env.name }}
+          plan_file: ./stagePlan/state.tfplan
+          subscription_id: ${{ matrix.env.subscription_id }}
+
+      - name: Remove Storage Firewall Rule
+        if: always()
+        uses: ./.github/actions/storage-firewall
+        with:
+          subscription_id: ${{ secrets.TFSTATE_SUBSCRIPTION_ID }}
+          storage_account: ${{ secrets.TFSTATE_STORAGE_ACCOUNT }}
+          resource_group: ${{ secrets.TFSTATE_RESOURCE_GROUP }}
+          mode: 'off'
+
+  destroy:
+    name: Destroy - ${{ matrix.env.name }}
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env:
+          - name: nonprod
+            subscription_id: ${{ secrets.NONPROD_SUBSCRIPTION_ID }}
+          - name: prod
+            subscription_id: ${{ secrets.PROD_SUBSCRIPTION_ID }}
+      fail-fast: false
+    environment:
+      name: ${{ matrix.env.name }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ matrix.env.subscription_id }}
+      ARM_TENANT_ID: ${{ env.TENANT_ID }}
+      ARM_USE_AZUREAD: true
+      ARM_USE_OIDC: true
+      TF_IN_AUTOMATION: true
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.TENANT_ID }}
+          subscription-id: ${{ matrix.env.subscription_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Add Storage Firewall Rule
+        uses: ./.github/actions/storage-firewall
+        with:
+          subscription_id: ${{ secrets.TFSTATE_SUBSCRIPTION_ID }}
+          storage_account: ${{ secrets.TFSTATE_STORAGE_ACCOUNT }}
+          resource_group: ${{ secrets.TFSTATE_RESOURCE_GROUP }}
+          mode: 'on'
+
+      - name: Terraform Init
+        uses: ./.github/actions/terraform-init
+        with:
+          working_directory: ${{ github.workspace }}/deployments
+          backend_subscription_id: ${{ secrets.TFSTATE_SUBSCRIPTION_ID }}
+          backend_resource_group: ${{ secrets.TFSTATE_RESOURCE_GROUP }}
+          backend_storage_account: ${{ secrets.TFSTATE_STORAGE_ACCOUNT }}
+          backend_container: ${{ secrets.TFSTATE_CONTAINER }}
+          backend_key: "${{ matrix.env.name }}.tfstate"
+          subscription_id: ${{ matrix.env.subscription_id }}
+
+      - name: Terraform Destroy
+        uses: ./.github/actions/terraform-destroy
+        with:
+          working_directory: ${{ github.workspace }}/deployments
+          subscription_id: ${{ matrix.env.subscription_id }}
+
+      - name: Remove Storage Firewall Rule
+        if: always()
+        uses: ./.github/actions/storage-firewall
+        with:
+          subscription_id: ${{ secrets.TFSTATE_SUBSCRIPTION_ID }}
+          storage_account: ${{ secrets.TFSTATE_STORAGE_ACCOUNT }}
+          resource_group: ${{ secrets.TFSTATE_RESOURCE_GROUP }}
+          mode: 'off'

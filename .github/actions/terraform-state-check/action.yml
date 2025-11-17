@@ -1,0 +1,49 @@
+name: 'Terraform State Check'
+description: 'Verify access to Terraform state storage'
+inputs:
+  subscription_id:
+    description: 'Azure subscription ID for state storage'
+    required: true
+  resource_group:
+    description: 'Resource group name'
+    required: true
+  storage_account:
+    description: 'Storage account name'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set Azure Subscription
+      shell: bash
+      run: |
+        az account set --subscription ${{ inputs.subscription_id }}
+        echo "Set subscription to: $(az account show --query name -o tsv)"
+
+    - name: Check Storage Account Access
+      shell: bash
+      run: |
+        echo "Checking access to storage account: ${{ inputs.storage_account }}"
+        
+        # Verify storage account exists
+        if az storage account show \
+          --name ${{ inputs.storage_account }} \
+          --resource-group ${{ inputs.resource_group }} \
+          --query "name" -o tsv > /dev/null 2>&1; then
+          echo "Storage account found: ${{ inputs.storage_account }}"
+        else
+          echo "Storage account not found or no access: ${{ inputs.storage_account }}"
+          exit 1
+        fi
+        
+        # Check if container exists
+        ACCOUNT_KEY=$(az storage account keys list \
+          --resource-group ${{ inputs.resource_group }} \
+          --account-name ${{ inputs.storage_account }} \
+          --query "[0].value" -o tsv 2>/dev/null || echo "")
+        
+        if [ -n "$ACCOUNT_KEY" ]; then
+          echo "Successfully retrieved storage account key"
+        else
+          echo "Could not retrieve storage account key (may use MSI/OIDC)"
+        fi

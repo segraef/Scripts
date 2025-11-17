@@ -1,0 +1,60 @@
+name: 'Storage Firewall Management'
+description: 'Add or remove agent IP from storage account firewall'
+inputs:
+  subscription_id:
+    description: 'Azure subscription ID for storage account'
+    required: true
+  storage_account:
+    description: 'Storage account name'
+    required: true
+  resource_group:
+    description: 'Resource group name'
+    required: true
+  mode:
+    description: 'Mode: on to add IP, off to remove IP'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Get Public IP
+      id: get-ip
+      shell: bash
+      run: |
+        PUBLIC_IP=$(curl -s https://api.ipify.org)
+        echo "ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+        echo "Public IP: $PUBLIC_IP"
+
+    - name: Set Azure Subscription
+      shell: bash
+      run: |
+        az account set --subscription ${{ inputs.subscription_id }}
+        echo "Set subscription to: $(az account show --query name -o tsv)"
+
+    - name: Add IP to Storage Firewall
+      if: inputs.mode == 'on'
+      shell: bash
+      run: |
+        echo "Adding IP ${{ steps.get-ip.outputs.ip }} to storage account firewall..."
+        az storage account network-rule add \
+          --resource-group ${{ inputs.resource_group }} \
+          --account-name ${{ inputs.storage_account }} \
+          --ip-address ${{ steps.get-ip.outputs.ip }}
+        
+        echo "IP added to firewall rules"
+        
+        # Wait for rule to propagate
+        echo "Waiting 30 seconds for firewall rule to propagate..."
+        sleep 30
+
+    - name: Remove IP from Storage Firewall
+      if: inputs.mode == 'off'
+      shell: bash
+      run: |
+        echo "Removing IP ${{ steps.get-ip.outputs.ip }} from storage account firewall..."
+        az storage account network-rule remove \
+          --resource-group ${{ inputs.resource_group }} \
+          --account-name ${{ inputs.storage_account }} \
+          --ip-address ${{ steps.get-ip.outputs.ip }} || true
+        
+        echo "IP removed from firewall rules"
