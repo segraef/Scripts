@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-MyBOS – Meeting Room 3 Auto-Booker
+Meeting Room 3 Auto-Booker
 Books Mon–Fri 08:00–17:00 for the next 4 weeks (platform max).
 
 Usage:
     python book.py              # book everything available
-    python book.py --dry-run   # preview without submitting
-    python book.py --yes       # skip per-batch confirmation
+    python book.py --dry-run    # preview without submitting
+    python book.py --yes        # skip per-batch confirmation
 """
 
 import requests
@@ -16,11 +16,17 @@ import argparse
 import os
 import time
 import random
+from pathlib import Path
 from datetime import date, timedelta
+from urllib.parse import urlsplit
+
+
+ENV_FILE = Path(__file__).with_name(".env")
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-EMAIL    = os.environ.get("MYBOS_EMAIL",    "")
-PASSWORD = os.environ.get("MYBOS_PASSWORD", "")
+EMAIL    = os.environ.get("BOOKER_EMAIL", "")
+PASSWORD = os.environ.get("BOOKER_PASSWORD", "")
+BASE_URL = os.environ.get("BOOKER_BASE_URL", "")
 
 AMENITY_ID   = "66679a76a3f946d03c0c8ffc"
 AMENITY_NAME = "Meeting Room 3"
@@ -39,16 +45,12 @@ DELAY_BETWEEN_BOOKINGS = 3.0   # extra pause after each booking/save
 DELAY_ON_ERROR         = 10.0  # back-off on any non-200 response
 # ──────────────────────────────────────────────────────────────────────────────
 
-BASE_URL = "https://app.v4.mybos.com/be/api/v4"
-
 SESSION_HEADERS = {
     "app-mb":            "__@mbv4vbm@__",
     "Content-Type":      "application/json",
     "Accept":            "application/json, text/plain, */*",
     "Accept-Language":   "en-GB,en;q=0.9,en-US;q=0.8,de;q=0.7,de-DE;q=0.6",
     "Accept-Encoding":   "gzip, deflate, br, zstd",
-    "Origin":            "https://app.v4.mybos.com",
-    "Referer":           "https://app.v4.mybos.com/resident/amenity",
     "Cache-Control":     "no-cache",
     "Pragma":            "no-cache",
     "sec-ch-ua":         '"Not:A-Brand";v="99", "Microsoft Edge";v="145", "Chromium";v="145"',
@@ -63,6 +65,43 @@ SESSION_HEADERS = {
         "Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0"
     ),
 }
+
+
+def app_url_from_base(base_url: str) -> str:
+    parts = urlsplit(base_url)
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def load_env_file(env_file: Path) -> None:
+    if not env_file.is_file():
+        return
+
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
+def refresh_config_from_env() -> None:
+    global EMAIL, PASSWORD, BASE_URL
+    EMAIL = os.environ.get("BOOKER_EMAIL", "")
+    PASSWORD = os.environ.get("BOOKER_PASSWORD", "")
+    BASE_URL = os.environ.get("BOOKER_BASE_URL", "")
 
 
 def pause(seconds: float, label: str = "") -> None:
@@ -194,32 +233,46 @@ def confirm(prompt: str) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MyBOS Meeting Room 3 auto-booker")
+    parser = argparse.ArgumentParser(description="Meeting Room 3 auto-booker")
     parser.add_argument("--dry-run", action="store_true",
                         help="Preview without actually booking")
     parser.add_argument("--yes", "-y", action="store_true",
                         help="Skip confirmation prompts")
     parser.add_argument("--email", "-u", default=None,
-                        help="MyBOS login email (overrides MYBOS_EMAIL env var)")
+                        help="Login email (overrides BOOKER_EMAIL env var)")
     parser.add_argument("--password", "-p", default=None,
-                        help="MyBOS login password (overrides MYBOS_PASSWORD env var)")
+                        help="Login password (overrides BOOKER_PASSWORD env var)")
+    parser.add_argument("--base-url", "-b", default=None,
+                        help="API base URL (overrides BOOKER_BASE_URL env var)")
     args = parser.parse_args()
 
-    # Allow CLI credentials to override env vars
-    global EMAIL, PASSWORD
+    load_env_file(ENV_FILE)
+    refresh_config_from_env()
+
+    # Allow CLI config to override env vars
+    global EMAIL, PASSWORD, BASE_URL
     if args.email:
         EMAIL = args.email
     if args.password:
         PASSWORD = args.password
+    if args.base_url:
+        BASE_URL = args.base_url
 
-    if not EMAIL or not PASSWORD:
-        print("❌ Credentials required. Provide via:")
-        print("   --email EMAIL --password PASSWORD")
-        print("   or set MYBOS_EMAIL / MYBOS_PASSWORD environment variables")
+    if not EMAIL or not PASSWORD or not BASE_URL:
+        print("❌ Credentials and base URL required. Provide via:")
+        print("   --email EMAIL --password PASSWORD --base-url URL")
+        print("   or set BOOKER_EMAIL / BOOKER_PASSWORD / BOOKER_BASE_URL environment variables")
+        sys.exit(1)
+
+    app_url = app_url_from_base(BASE_URL)
+    if not app_url:
+        print("❌ Invalid base URL")
         sys.exit(1)
 
     session = requests.Session()
     session.headers.update(SESSION_HEADERS)
+    session.headers["Origin"] = app_url
+    session.headers["Referer"] = f"{app_url}/resident/amenity"
     login(session)
 
     amenity = get_amenity(session)
