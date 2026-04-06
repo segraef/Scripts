@@ -9,16 +9,21 @@ Usage:
     python book.py --yes        # skip per-batch confirmation
 """
 
-import requests
-import json
-import sys
 import argparse
+import base64
+import hashlib
+import json
 import os
-import time
 import random
-from pathlib import Path
+import re
+import secrets
+import sys
+import time
 from datetime import date, timedelta
-from urllib.parse import urlsplit
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+import requests
 
 
 ENV_FILE = Path(__file__).with_name(".env")
@@ -27,6 +32,10 @@ ENV_FILE = Path(__file__).with_name(".env")
 EMAIL    = os.environ.get("BOOKER_EMAIL", "")
 PASSWORD = os.environ.get("BOOKER_PASSWORD", "")
 BASE_URL = os.environ.get("BOOKER_BASE_URL", "")
+OAUTH_AUTH_URL = os.environ.get("BOOKER_AUTH_URL", "").rstrip("/")
+OAUTH_CLIENT_ID = os.environ.get("BOOKER_OAUTH_CLIENT_ID", "")
+OAUTH_ACCESS_COOKIE = os.environ.get("BOOKER_OAUTH_ACCESS_COOKIE", "")
+OAUTH_LOGIN_TOKEN_RE = re.compile(r'name="_token" value="([^"]+)"')
 
 AMENITY_ID   = "66679a76a3f946d03c0c8ffc"
 AMENITY_NAME = "Meeting Room 3"
@@ -40,9 +49,10 @@ TARGET_SLOTS = [
 # booking window is now read from the amenity's booking_available_days field
 
 # ─── RATE LIMITING ────────────────────────────────────────────────────────────
-DELAY_BETWEEN_REQUESTS = 1.5   # seconds between every API call
-DELAY_BETWEEN_BOOKINGS = 3.0   # extra pause after each booking/save
-DELAY_ON_ERROR         = 10.0  # back-off on any non-200 response
+DELAY_BETWEEN_REQUESTS     = 1.5   # seconds between every API call
+MIN_DELAY_BETWEEN_BOOKINGS = 16.0  # random pause after booking/save
+MAX_DELAY_BETWEEN_BOOKINGS = 59.0  # random pause after booking/save
+DELAY_ON_ERROR             = 10.0  # back-off on any non-200 response
 # ──────────────────────────────────────────────────────────────────────────────
 
 SESSION_HEADERS = {
@@ -74,6 +84,69 @@ def app_url_from_base(base_url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
+def oauth_authorize_url(auth_url: str) -> str:
+    return f"{auth_url}/oauth/authorize"
+
+
+def oauth_login_url(auth_url: str) -> str:
+    return f"{auth_url}/login"
+
+
+def code_verifier() -> str:
+    return base64.urlsafe_b64encode(secrets.token_bytes(48)).decode().rstrip("=")
+
+
+def code_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).decode().rstrip("=")
+
+
+def get_cookie_value(session: requests.Session, name: str) -> str:
+    for cookie in session.cookies:
+        if cookie.name == name:
+            return cookie.value
+    return ""
+
+
+def oauth_session_from(session: requests.Session) -> requests.Session:
+    auth_session = requests.Session()
+    for header in (
+        "User-Agent",
+        "Accept-Language",
+        "Accept-Encoding",
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "sec-ch-ua-platform",
+    ):
+        if header in session.headers:
+            auth_session.headers[header] = session.headers[header]
+    auth_session.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    return auth_session
+
+
+def extract_oauth_code(url: str, expected_state: str, *, required: bool) -> str:
+    query = parse_qs(urlsplit(url).query)
+    error = query.get("error", [""])[0]
+    if error:
+        description = query.get("error_description", [""])[0]
+        if description:
+            raise RuntimeError(f"OAuth authorize failed: {error} ({description})")
+        raise RuntimeError(f"OAuth authorize failed: {error}")
+
+    code = query.get("code", [""])[0]
+    if not code:
+        if required:
+            raise RuntimeError(
+                f"OAuth login did not reach callback URL. Final URL: {url}"
+            )
+        return ""
+
+    returned_state = query.get("state", [""])[0]
+    if returned_state != expected_state:
+        raise RuntimeError("OAuth state mismatch during login")
+    return code
+
+
 def load_env_file(env_file: Path) -> None:
     if not env_file.is_file():
         return
@@ -98,10 +171,13 @@ def load_env_file(env_file: Path) -> None:
 
 
 def refresh_config_from_env() -> None:
-    global EMAIL, PASSWORD, BASE_URL
+    global EMAIL, PASSWORD, BASE_URL, OAUTH_AUTH_URL, OAUTH_CLIENT_ID, OAUTH_ACCESS_COOKIE
     EMAIL = os.environ.get("BOOKER_EMAIL", "")
     PASSWORD = os.environ.get("BOOKER_PASSWORD", "")
     BASE_URL = os.environ.get("BOOKER_BASE_URL", "")
+    OAUTH_AUTH_URL = os.environ.get("BOOKER_AUTH_URL", "").rstrip("/")
+    OAUTH_CLIENT_ID = os.environ.get("BOOKER_OAUTH_CLIENT_ID", "")
+    OAUTH_ACCESS_COOKIE = os.environ.get("BOOKER_OAUTH_ACCESS_COOKIE", "")
 
 
 def pause(seconds: float, label: str = "") -> None:
@@ -113,26 +189,123 @@ def pause(seconds: float, label: str = "") -> None:
         print("done")
 
 
+def pause_range(min_seconds: float, max_seconds: float, label: str = "") -> None:
+    wait = random.uniform(min_seconds, max_seconds)
+    if label:
+        print(f"    ⏳ waiting {wait:.1f}s {label}…", end=" ", flush=True)
+    time.sleep(wait)
+    if label:
+        print("done")
+
+
 def login(session: requests.Session) -> None:
-    resp = session.post(f"{BASE_URL}/auth/login", json={
-        "username": EMAIL,
-        "password": PASSWORD,
-        "remember": False,
-        "modes": ["BUILDING MANAGER", "RESIDENT", "COMMUNITY",
-                  "COMPANY", "COMPANY BUILDING MANAGER"],
-    })
-    resp.raise_for_status()
-    token = resp.json().get("access_token")
+    app_url = app_url_from_base(BASE_URL)
+    if not app_url:
+        raise RuntimeError("Invalid base URL")
+    if not OAUTH_AUTH_URL:
+        raise RuntimeError("Missing BOOKER_AUTH_URL")
+    if not OAUTH_CLIENT_ID:
+        raise RuntimeError("Missing BOOKER_OAUTH_CLIENT_ID")
+    if not OAUTH_ACCESS_COOKIE:
+        raise RuntimeError("Missing BOOKER_OAUTH_ACCESS_COOKIE")
+
+    session.headers.pop("Authorization", None)
+    auth_session = oauth_session_from(session)
+    authorize_url = oauth_authorize_url(OAUTH_AUTH_URL)
+    login_url = oauth_login_url(OAUTH_AUTH_URL)
+
+    verifier = code_verifier()
+    state = secrets.token_urlsafe(16)
+    redirect_uri = f"{app_url}/auth/callback"
+
+    authorize_resp = auth_session.get(
+        authorize_url,
+        params={
+            "client_id": OAUTH_CLIENT_ID,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "",
+            "state": state,
+            "code_challenge": code_challenge(verifier),
+            "code_challenge_method": "S256",
+        },
+        allow_redirects=True,
+    )
+    authorize_resp.raise_for_status()
+
+    code = extract_oauth_code(authorize_resp.url, state, required=False)
+    if not code:
+        login_token_match = OAUTH_LOGIN_TOKEN_RE.search(authorize_resp.text)
+        if not login_token_match:
+            raise RuntimeError(
+                f"Could not find OAuth login form token. Final URL: {authorize_resp.url}"
+            )
+
+        login_resp = auth_session.post(
+            login_url,
+            data={
+                "_token": login_token_match.group(1),
+                "email": EMAIL,
+                "password": PASSWORD,
+            },
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": OAUTH_AUTH_URL,
+                "Referer": authorize_resp.url,
+            },
+            allow_redirects=True,
+        )
+        login_resp.raise_for_status()
+        code = extract_oauth_code(login_resp.url, state, required=True)
+
+    token_resp = auth_session.post(
+        f"{app_url}/oauth/token",
+        json={
+            "client_id": OAUTH_CLIENT_ID,
+            "grant_type": "authorization_code",
+            "redirect_uri": redirect_uri,
+            "code_verifier": verifier,
+            "code": code,
+        },
+        headers={
+            "Origin": app_url,
+            "Referer": redirect_uri,
+        },
+    )
+    token_resp.raise_for_status()
+
+    for cookie in auth_session.cookies:
+        session.cookies.set_cookie(cookie)
+
+    token = get_cookie_value(session, OAUTH_ACCESS_COOKIE)
     if not token:
-        raise RuntimeError(f"No access_token in login response: {resp.text[:300]}")
+        raise RuntimeError(
+            "OAuth token cookie missing after token exchange. "
+            f"Response was: {token_resp.text[:300]}"
+        )
+
     session.headers["Authorization"] = f"Bearer {token}"
-    print("✅ Logged in — JWT token acquired")
+    print("✅ Logged in - OAuth session established")
     pause(DELAY_BETWEEN_REQUESTS)
 
 
+def api_post(
+    session: requests.Session,
+    path: str,
+    *,
+    payload: dict,
+    params: dict | None = None,
+) -> requests.Response:
+    resp = session.post(f"{BASE_URL}{path}", params=params, json=payload)
+    if resp.status_code == 401:
+        print("    🔐 Session expired, signing in again...")
+        login(session)
+        resp = session.post(f"{BASE_URL}{path}", params=params, json=payload)
+    return resp
+
+
 def get_amenity(session: requests.Session) -> dict:
-    resp = session.post(f"{BASE_URL}/resident/amenity/single",
-                        json={"_id": AMENITY_ID})
+    resp = api_post(session, "/resident/amenity/single", payload={"_id": AMENITY_ID})
     resp.raise_for_status()
     amenity = resp.json()
     print(f"✅ Amenity loaded: {amenity.get('name')}")
@@ -141,8 +314,11 @@ def get_amenity(session: requests.Session) -> dict:
 
 
 def get_profile(session: requests.Session) -> dict:
-    resp = session.post(f"{BASE_URL}/resident/profile/me",
-                        json={"enablePendo": False, "enableAvatar": False})
+    resp = api_post(
+        session,
+        "/resident/profile/me",
+        payload={"enablePendo": False, "enableAvatar": False},
+    )
     resp.raise_for_status()
     profile = resp.json()
     print(f"✅ Profile loaded: {profile.get('first_name')} {profile.get('last_name')}")
@@ -151,10 +327,11 @@ def get_profile(session: requests.Session) -> dict:
 
 
 def get_enabled_dates(session: requests.Session, month: int, year: int) -> set:
-    resp = session.post(
-        f"{BASE_URL}/resident/amenity/booking/{AMENITY_ID}",
+    resp = api_post(
+        session,
+        f"/resident/amenity/booking/{AMENITY_ID}",
         params={"month": month, "year": year},
-        json={"id": AMENITY_ID, "m": month, "y": year},
+        payload={"id": AMENITY_ID, "m": month, "y": year},
     )
     resp.raise_for_status()
     pause(DELAY_BETWEEN_REQUESTS)
@@ -162,9 +339,10 @@ def get_enabled_dates(session: requests.Session, month: int, year: int) -> set:
 
 
 def get_slots(session: requests.Session, date_str: str, verbose: bool = False) -> dict:
-    resp = session.post(
-        f"{BASE_URL}/resident/amenity/booking/{AMENITY_ID}/{date_str}",
-        json={"id": AMENITY_ID, "date": date_str},
+    resp = api_post(
+        session,
+        f"/resident/amenity/booking/{AMENITY_ID}/{date_str}",
+        payload={"id": AMENITY_ID, "date": date_str},
     )
     if resp.status_code != 200:
         print(f"    ⚠️  slot check returned {resp.status_code}, backing off {DELAY_ON_ERROR}s")
@@ -198,14 +376,14 @@ def book(session: requests.Session, amenity: dict, profile: dict,
         print(f"    🔍 DRY RUN → {date_str}: {slots}")
         pause(0.2)
         return True
-    resp = session.post(f"{BASE_URL}/resident/amenity/booking/save", json=payload)
+    resp = api_post(session, "/resident/amenity/booking/save", payload=payload)
     if resp.status_code == 200:
         try:
             msg = resp.json().get("message", "OK")
         except Exception:
             msg = resp.text[:80] if resp.text.strip() else "OK (empty body)"
         print(f"    ✅ {msg}")
-        pause(DELAY_BETWEEN_BOOKINGS, "after booking")
+        pause_range(MIN_DELAY_BETWEEN_BOOKINGS, MAX_DELAY_BETWEEN_BOOKINGS, "after booking")
         return True
     else:
         print(f"    ❌ {resp.status_code}: {resp.text[:200]}")
@@ -258,10 +436,21 @@ def main():
     if args.base_url:
         BASE_URL = args.base_url
 
-    if not EMAIL or not PASSWORD or not BASE_URL:
-        print("❌ Credentials and base URL required. Provide via:")
-        print("   --email EMAIL --password PASSWORD --base-url URL")
-        print("   or set BOOKER_EMAIL / BOOKER_PASSWORD / BOOKER_BASE_URL environment variables")
+    required_config = {
+        "BOOKER_EMAIL": EMAIL,
+        "BOOKER_PASSWORD": PASSWORD,
+        "BOOKER_BASE_URL": BASE_URL,
+        "BOOKER_AUTH_URL": OAUTH_AUTH_URL,
+        "BOOKER_OAUTH_CLIENT_ID": OAUTH_CLIENT_ID,
+        "BOOKER_OAUTH_ACCESS_COOKIE": OAUTH_ACCESS_COOKIE,
+    }
+    missing_config = [name for name, value in required_config.items() if not value]
+    if missing_config:
+        print("❌ Missing required configuration:")
+        for name in missing_config:
+            print(f"   {name}")
+        print(f"   Set them in {ENV_FILE}")
+        print("   CLI overrides exist for BOOKER_EMAIL / BOOKER_PASSWORD / BOOKER_BASE_URL")
         sys.exit(1)
 
     app_url = app_url_from_base(BASE_URL)
@@ -303,7 +492,7 @@ def main():
     end = max_end
     print(f"\n📅 Window: {scan_start} → {end} ({(end - scan_start).days}d, newest first)  |  Mon–Fri  |  {TARGET_SLOTS[0]}–{TARGET_SLOTS[-1]}")
     print(f"⏱  Delays: {DELAY_BETWEEN_REQUESTS}s between requests, "
-          f"{DELAY_BETWEEN_BOOKINGS}s after each booking\n")
+          f"{MIN_DELAY_BETWEEN_BOOKINGS:.0f}-{MAX_DELAY_BETWEEN_BOOKINGS:.0f}s random after each booking\n")
 
     # ── Phase 1: discovery (read-only) ────────────────────────────────────────
     print("🔍 Phase 1 — checking availability (no bookings yet)…\n")
@@ -361,7 +550,10 @@ def main():
             return
 
     # ── Phase 2: booking ──────────────────────────────────────────────────────
-    print(f"\n🚀 Phase 2 — booking ({DELAY_BETWEEN_BOOKINGS}s cooldown between saves)…\n")
+    print(
+        f"\n🚀 Phase 2 — booking "
+        f"({MIN_DELAY_BETWEEN_BOOKINGS:.0f}-{MAX_DELAY_BETWEEN_BOOKINGS:.0f}s random cooldown between saves)…\n"
+    )
     booked, failed = 0, 0
 
     for i, (day, slots) in enumerate(plan, 1):

@@ -1,0 +1,17 @@
+Create the venv once:
+python3 -m venv .venv
+
+Start the venv:
+source .venv/bin/activate
+
+Install modules:
+python -m pip install -r requirements.txt
+
+Run the script:
+python book.py
+
+Leave the venv:
+deactivate
+
+Shortcut without starting the venv:
+./.venv/bin/python book.py
