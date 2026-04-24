@@ -10,6 +10,17 @@ argument-hint: The GitHub owner alias to triage, and optionally a target report 
 
 > ❗ **Step 0 - Ask for the owner alias.** Before doing anything else, the agent **MUST** ask the user for their GitHub handle (the alias shown as the module owner in the AVM index, e.g. `octocat`). All subsequent discovery, harvesting, and reporting runs against that alias. Do not assume; do not carry over an alias from a previous session.
 
+> ❓ **Step 0.5 - Ask for the analysis depth.** Immediately after the alias is confirmed and the module list is presented, the agent **MUST** ask the user to choose one of two modes:
+>
+> - **`quick`** (default) - Thread-only triage. Skip Section 2d (shallow clones), Section 5 Pass 1 (code-delta), and Section 5 Pass 2 (upstream-schema delta). Dependencies come from issue threads alone. Faster (minutes), lower-fidelity, fine for a first-pass weekly sweep. Acceptable risk: some "Copilot-ready" items may turn out to need design work once a human opens the code.
+> - **`deep`** - Full three-pass dependency analysis. Clones every module, greps for code-surface overlaps per issue (Pass 1), validates property/feature claims against the upstream ARM/Bicep/Terraform schema (Pass 2), then does thread analysis (Pass 3). Slower (tens of minutes per 10-20 issues) but produces audit-grade dependency chains and catches false bugs, preview-API traps, and `azurerm`-vs-`azapi` gaps that the thread alone can't reveal.
+>
+> Present the choice exactly like this:
+>
+> > *"Before I start: do you want a `quick` triage (thread-only, faster) or a `deep` triage (clones the repos and validates claims against upstream schema, slower but catches false bugs and real dependency chains)? Reply `quick` or `deep`."*
+>
+> Record the choice in the report header so the consumer can see at a glance which mode produced the output. In `quick` mode, all references to "Pass 1 evidence", "Pass 2 evidence", or "code surface" in the report template collapse to "thread-claimed" and the corresponding columns state *"(quick mode - not analysed)"* rather than fabricating evidence.
+
 **Version:** 1.6 (2026-04-24)
 
 ---
@@ -102,6 +113,73 @@ Capture the result as a table the user can confirm before moving to Section 2:
 
 ---
 
+## Section 1.5 - Parallelization (fleet / subagents)
+
+A triage run is embarrassingly parallel: each module's issues can be harvested, deep-read, and dependency-analysed independently (Section 5 is explicitly **intra-module only**, so no cross-module coordination is needed until the final merge into the report). For owners with 5+ modules, running serially wastes wall-clock time - especially in `deep` mode where every module is cloned and greppped.
+
+### Fan-out model
+
+The orchestrator (this agent) always owns:
+
+- Step 0 / 0.5 user dialogue (alias, mode choice).
+- Section 1 module discovery and user confirmation.
+- Section 7 approval gate and Section 8 execution (never delegated - a subagent must not assign Copilot or post comments).
+- Section 9 final report assembly from worker outputs.
+
+Each **worker** (one per module) owns:
+
+- Section 2 harvest + Section 2c diff + Section 2d clone (deep mode).
+- Section 3 deep read of every issue for that module.
+- Section 4 classification.
+- Section 5 dependency analysis (all active passes per mode).
+- Section 6 bucket assignment.
+- Returns a structured per-module payload (table rows + chain list + open questions) for the orchestrator to merge.
+
+### Concurrency guardrails
+
+- **Default fan-out:** 4 workers in parallel. Raise to 8 only if the owner has 10+ modules AND the session has authenticated `gh` (5000 req/h limit). Never exceed 8 - GitHub's secondary rate limiter trips fast on concurrent Search API calls.
+- **Search API serialization:** the Bicep shared-repo path (Section 2b) uses `/search/issues`, which has a stricter secondary limit. Route all Search API calls for `Azure/bicep-registry-modules` through a single worker even if multiple Bicep modules are in scope; that worker sleeps ≥7s between queries. Dedicated TF repos (Section 2a) can fan out freely.
+- **Clone disk budget (deep mode):** shallow clones are ~5-50 MB each. Cap total at ~2 GB; if the owner has more modules than that allows, batch in waves and delete clones between waves.
+- **Authenticated token only:** every worker inherits the orchestrator's `gh auth token`. Do not spawn workers under a different account; SSO state won't propagate cleanly.
+- **Idempotency:** a worker crash must not corrupt the run. Write per-module payloads to `/tmp/triage-<owner>/workers/<repo>.json` as the worker finishes; re-run only the failed workers on retry.
+
+### Local vs cloud execution
+
+The same fan-out works both ways:
+
+- **Local subagents** (this repo's [`runSubagent`](#) tool or Claude's Task tool): spawn one `Explore`-style subagent per module with a tightly scoped prompt ("triage issues in `Azure/<repo>` under mode `<quick|deep>`, return JSON payload matching schema X"). Parallel subagents share the parent's MCP connections and auth, so no extra setup.
+- **Cloud agents** (GitHub Copilot coding agents, one per module): use `gh issue edit <N> --add-assignee Copilot` **only** for the final delegate-pile assignment in Section 8 - never for triage itself. Copilot coding agents are execution, not analysis.
+
+### Worker prompt template
+
+Use this prompt verbatim when spawning a subagent per module. Substitute `<...>` tokens:
+
+```
+You are a worker for the AVM Owner Triage Agent.
+Scope: Azure/<repo>   (module: <avm/res|ptn/path> - Bicep only)
+Mode: <quick|deep>
+Owner alias: <OWNER_ALIAS>
+
+Run Sections 2-6 of the playbook at segraef/Scripts/.github/agents/avm-owner-triage-agent.md
+for this module only. Do NOT run Section 7 or 8 - return your findings only.
+
+Output: write /tmp/triage-<OWNER_ALIAS>/workers/<repo>.json with:
+{
+  "repo": "<repo>",
+  "issues": [ {"number":..., "title":..., "type":..., "priority":..., "action":..., "deps":..., "evidence":...}, ... ],
+  "chains": [ {"name":..., "order":[#a,#b,#c], "rationale":...}, ... ],
+  "excluded": [...],
+  "open_questions": [...],
+  "mode_used": "<quick|deep>"
+}
+
+Do not post comments. Do not assign Copilot. Do not modify any repo. Read-only clones OK in deep mode.
+```
+
+The orchestrator waits for all worker JSON files, then assembles the Section 9 report in one pass.
+
+---
+
 ## Section 2 - Issue Harvesting
 
 ### 2a. Dedicated TF module repos (one module per repo)
@@ -146,7 +224,9 @@ Before classifying, diff the current open list against the previous report. Reco
 - 🔄 **Updated** (new comments or label churn) - may need re-classification
 - 🔁 **Re-opened duplicates** - primary resolved but dup still open → verify and close
 
-### 2d. Shallow clone of each module (mandatory)
+### 2d. Shallow clone of each module (**deep mode only**)
+
+> Skip this step if the user chose `quick` mode in Step 0.5.
 
 Dependency analysis needs the actual code, not just issue threads. For every module in scope, pull a read-only shallow clone:
 
@@ -236,9 +316,14 @@ Priority: 🔴 High (blocker, no workaround) | 🟠 Medium-high | 🟡 Medium | 
 
 > 🚫 **Scope: within a single module only.** Never link dependencies across modules/repos. Each module's backlog is triaged in isolation because a Copilot agent working on one repo has no visibility into another. Cross-module observations (e.g., "both AI Foundry and AI Landing Zone have DNS issues") are interesting for your roadmap but do **not** belong in the dependency matrix.
 
-Dependency analysis runs in **three passes**: code-delta, upstream-schema-delta, thread-declared.
+Dependency analysis runs in up to **three passes** depending on the mode chosen in Step 0.5:
 
-### Pass 1 - Code-delta analysis (**MANDATORY**)
+- `quick` mode: **Pass 3 only** (thread-declared). Passes 1 and 2 are skipped.
+- `deep` mode: **all three passes** (code-delta → upstream-schema delta → thread-declared).
+
+State the active mode at the top of this section in the final report so the reader knows which evidence types were actually consulted.
+
+### Pass 1 - Code-delta analysis (**deep mode only**)
 
 Issue threads only reveal *claimed* dependencies. Real dependencies live in the code: shared variables, shared resources, overlapping files, provider version pins, open PR branches against the same lines. A pure thread-based triage produces false positives (two "networking" issues that touch disjoint resources) and false negatives (two unrelated-sounding issues that both edit `locals.tf`).
 
@@ -261,7 +346,7 @@ For each issue in the module, compute a **code surface fingerprint** before decl
 
 Record per issue: `Code surface: <files>; symbols: <names>; overlaps: #<n>, #<n>; blocked by PR/branch: <ref or none>`. Two issues with overlapping surfaces become a chain even if the threads don't mention each other. Two issues in the same thematic cluster with disjoint surfaces can be **un**chained.
 
-### Pass 2 - Upstream-schema delta (**MANDATORY** for any issue citing a missing/unsupported property)
+### Pass 2 - Upstream-schema delta (**deep mode only**, for any issue citing a missing/unsupported property)
 
 An issue that claims *"property X is not supported"* or *"need to expose Y"* must be validated against the **authoritative resource-provider schema** before it can be marked Copilot-ready or chained. The module's own code is not the source of truth; the upstream schema is. Three sources, use all that apply.
 
@@ -391,6 +476,8 @@ gh issue close <number> --repo Azure/<repo>
 ```markdown
 # AVM Triage Report for owner `{{owner_alias}}` - {{YYYY-MM-DD}}
 
+**Mode:** `{{quick|deep}}` - {{"thread-only analysis" if quick else "full code-delta + upstream-schema + thread analysis"}}
+
 ## Triage summary
 
 ​```
@@ -415,7 +502,7 @@ The {{unblocked}} Copilot-ready items are the shortlist for assignment after use
 
 | # | Module | Title | Type | Priority | Action | Dependencies / Code surface / Upstream |
 |---|--------|-------|------|----------|--------|---------------------------------------|
-| [#{{n}}]({{url}}) | {{module}} | {{title}} | {{type}} | {{🔴/🟡/⚪}} {{priority}} | {{action}} | {{deps + code-delta evidence (overlapping files/symbols or PR diff) + upstream-schema evidence (api-version, preview flag, azurerm/azapi gap) when relevant}} |
+| [#{{n}}]({{url}}) | {{module}} | {{title}} | {{type}} | {{🔴/🟡/⚪}} {{priority}} | {{action}} | {{in deep mode: thread deps + code-delta evidence (overlapping files/symbols or PR diff) + upstream-schema evidence (api-version, preview flag, azurerm/azapi gap). In quick mode: thread-claimed deps only, annotate "(quick mode - code/schema not analysed)"}} |
 
 **Excluded (false positive):** {{list or "none"}}
 
@@ -495,6 +582,7 @@ Reply "go" to assign all of the above in one batch, or list the numbers you want
 - In the "Ordering / ship-together chains" and "Open questions for you" sections, link **every** `#N` reference - these sections are scanned for clickable navigation, so do not leave bare issue numbers.
 - Keep "Open questions" to decisions only the owner can make (ownership, design trade-offs, ping-vs-close). Do not ask what the agent can infer from the thread.
 - Place the report at the path the caller specifies. If none is given, default to `./avm-triage-<owner_alias>-<YYYY-MM-DD>.md` in the current working directory (see Quick Start).
+- Include the `**Mode:**` line directly under the title; this is mandatory so consumers know whether dependency edges are evidence-backed (deep) or thread-claimed (quick).
 
 ---
 
