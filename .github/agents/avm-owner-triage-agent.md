@@ -454,6 +454,29 @@ This is the single metric that tells the owner how much the triage actually save
 
 Present triage report → user confirms each action → then proceed.
 
+### 7a. Post-report delegation prompt (**MANDATORY**)
+
+After the report file has been written, the agent **MUST** ask the owner in chat (not inside the report) whether to hand the Copilot-ready-now shortlist to cloud Copilot coding agents now. The report is a static artifact; the delegation decision happens in the conversation.
+
+Use this prompt verbatim, substituting `<N>` with the count and listing the issue references as clickable chat links:
+
+> *"Report written to `<path>`. <N> issues are Copilot-ready right now:*
+> *- `Azure/<repo>` [#<n>](<url>) - <one-line scope>*
+> *- ...*
+>
+> *Do you want me to delegate all <N> to GitHub Copilot cloud agents now, delegate a subset, or hold? Reply:*
+> *- `all` to assign every Copilot-ready-now issue*
+> *- a space- or comma-separated list of issue numbers (e.g. `160 157 73`) to assign a subset*
+> *- `hold` to do nothing and exit"*
+
+Rules:
+
+- Only list issues whose Action is exactly `Copilot-ready` (not `Copilot-ready (after #X)` - those are still blocked).
+- If any of the shortlisted issues are already assigned to Copilot, call that out in the same prompt so the owner doesn't redundantly approve.
+- Do not include this prompt text inside the report markdown. It belongs in the chat response that follows the write.
+- Any grouping comments (e.g. "closing #58 into #56") mentioned in the Combined Action Plan must be surfaced for approval **before** the `gh issue edit --add-assignee Copilot` batch runs; post the grouping comments first, then assign.
+- Exit cleanly on `hold`. On `all` or a subset list, proceed to Section 8.
+
 ---
 
 ## Section 8 - Execution (After Approval)
@@ -500,9 +523,19 @@ The {{unblocked}} Copilot-ready items are the shortlist for assignment after use
 
 ## All Issues - Flat List ({{total}} total)
 
-| # | Module | Title | Type | Priority | Action | Dependencies / Code surface / Upstream |
-|---|--------|-------|------|----------|--------|---------------------------------------|
-| [#{{n}}]({{url}}) | {{module}} | {{title}} | {{type}} | {{🔴/🟡/⚪}} {{priority}} | {{action}} | {{in deep mode: thread deps + code-delta evidence (overlapping files/symbols or PR diff) + upstream-schema evidence (api-version, preview flag, azurerm/azapi gap). In quick mode: thread-claimed deps only, annotate "(quick mode - code/schema not analysed)"}} |
+Group issues into one table **per repo** (H2 subsection per repo). Within each per-repo table, sort rows by priority descending, then by issue number ascending:
+
+1. 🔴 High
+2. 🟡 Medium
+3. ⚪ Low
+
+Within the same priority tier, lower issue numbers come first. Do not interleave repos; finish one repo's table before starting the next. Order the repo sections themselves by total open issue count descending (largest backlog first).
+
+### `Azure/{{repo}}` ({{open_count}} open)
+
+| # | Title | Type | Priority | Action | Dependencies / Code surface / Upstream |
+|---|-------|------|----------|--------|---------------------------------------|
+| [#{{n}}]({{url}}) | {{title}} | {{type}} | {{🔴/🟡/⚪}} {{priority}} | {{action}} | {{in deep mode: thread deps + code-delta evidence (overlapping files/symbols or PR diff) + upstream-schema evidence (api-version, preview flag, azurerm/azapi gap). In quick mode: thread-claimed deps only, annotate "(quick mode - code/schema not analysed)"}} |
 
 **Excluded (false positive):** {{list or "none"}}
 
@@ -567,8 +600,6 @@ These issues are ready to assign to GitHub Copilot today - scope is clear, no in
 - [#{{n}}]({{url}}) + [#{{n}}]({{url}}) - {{scope}} (assign **#{{primary}}**, group #{{secondary}} into the same PR)
 
 {{if any already-assigned: "[#{{n}}]({{url}}) is already assigned to Copilot."}}
-
-Reply "go" to assign all of the above in one batch, or list the numbers you want (for example `go: 160, 157, 73`).
 ```
 
 **Template rules:**
@@ -583,6 +614,7 @@ Reply "go" to assign all of the above in one batch, or list the numbers you want
 - Keep "Open questions" to decisions only the owner can make (ownership, design trade-offs, ping-vs-close). Do not ask what the agent can infer from the thread.
 - Place the report at the path the caller specifies. If none is given, default to `./avm-triage-<owner_alias>-<YYYY-MM-DD>.md` in the current working directory (see Quick Start).
 - Include the `**Mode:**` line directly under the title; this is mandatory so consumers know whether dependency edges are evidence-backed (deep) or thread-claimed (quick).
+- In the "All Issues - Flat List" section, produce one table per repo (H3 subsection headed `` ### `Azure/{{repo}}` ({{open_count}} open) ``), and sort rows within each table by priority descending (🔴 → 🟡 → ⚪), then by issue number ascending. Order the repo subsections themselves by total open issue count descending. Do not produce a single combined table.
 
 ---
 
