@@ -9,7 +9,7 @@ tools: [vscode, execute, read, agent, edit, search, web, browser, 'github/*', 'm
 
 > ❗ **Step 0 - Ask for the owner alias.** Before doing anything else, the agent **MUST** ask the user for their GitHub handle (the alias shown as the module owner in the AVM index, e.g. `octocat`). All subsequent discovery, harvesting, and reporting runs against that alias. Do not assume; do not carry over an alias from a previous session.
 
-**Version:** 1.5 (2026-04-24)
+**Version:** 1.6 (2026-04-24)
 
 ---
 
@@ -66,10 +66,11 @@ gh issue list --repo Azure/<repo> --state open --limit 200 \
   --json number,title,labels,assignees,comments,createdAt,updatedAt
 ```
 
-If `gh` is blocked by SAML/SSO on the org, fall back to the public REST API:
+If `gh` reports SAML/SSO enforcement, authorize the Azure org session first (see Appendix C) rather than dropping to unauthenticated curl. Only as a last resort:
 
 ```bash
-curl -sS "https://api.github.com/repos/Azure/<repo>/issues?state=open&per_page=100"
+curl -sS -H "Authorization: Bearer $(gh auth token)" \
+  "https://api.github.com/repos/Azure/<repo>/issues?state=open&per_page=100"
 ```
 
 Filter PRs out with `[i for i in d if 'pull_request' not in i]`.
@@ -268,6 +269,120 @@ gh issue close <number> --repo Azure/<repo>
 
 ---
 
+## Section 9 - Report Output Template (**MANDATORY**)
+
+> Write the final report to `report.md` in the working directory. Follow this skeleton **exactly** - do not reorder sections, rename headings, or drop tables. Fill every `{{token}}`. Priority icons are 🔴 High · 🟡 Medium · ⚪ Low (3 tiers only).
+
+```markdown
+# AVM Triage Report for owner `{{owner_alias}}` - {{YYYY-MM-DD}}
+
+## Triage summary
+
+​```
+Total open:              {{total}}
+Copilot-ready now:       {{unblocked}} ({{unblocked_pct}}%)   - mechanical / well-specified, assignable today
+Copilot-ready (blocked): {{blocked}}          - waiting on another in-module issue or PR
+Needs owner:             {{H}} ({{H_pct}}%)   - design, investigation, or judgement calls
+​```
+
+### Module issues analysed
+
+| Repo | Open | 🔴 High | 🟡 Medium | ⚪ Low | Copilot-ready now | Copilot-ready (blocked) | Needs owner |
+|------|------|---------|-----------|--------|-------------------|-------------------------|-------------|
+| {{repo}} | ... |
+| **Total** | ... |
+
+The {{unblocked}} Copilot-ready items are the shortlist for assignment after user approval (Playbook Section 7).
+
+---
+
+## All Issues - Flat List ({{total}} total)
+
+| # | Module | Title | Type | Priority | Action | Dependencies / Constraints |
+|---|--------|-------|------|----------|--------|---------------------------|
+| [#{{n}}]({{url}}) | {{module}} | {{title}} | {{type}} | {{🔴/🟡/⚪}} {{priority}} | {{action}} | {{deps}} |
+
+**Excluded (false positive):** {{list or "none"}}
+
+### Previous-triage diff (if applicable)
+
+- ✅ **Resolved since {{prev_date}}:** {{list}}
+- ➕ **New since {{prev_date}}:** {{list}}
+- 🔄 **Updated:** {{list}}
+- 🔁 **Re-opened duplicates:** {{list}}
+
+---
+
+## Combined Action Plan
+
+### 🔴 Act now
+| Repo | # | Action |
+|------|---|--------|
+| {{repo}} | [#{{n}}]({{url}}) | {{what to do}} |
+
+### 🤖 Copilot-ready batch (pending approval per issue)
+| Repo | Issues |
+|------|--------|
+| {{repo}} | [#{{n}}]({{url}}), ...; [#{{n}}]({{url}}) *(after #{{blocker}})* |
+
+### 🔗 PR-in-flight - review before assigning Copilot
+| Repo | Issue | Note |
+|------|-------|------|
+| {{repo}} | [#{{n}}]({{url}}) | {{branch/PR link and rationale}} |
+
+### ⚠️ Duplicates to close (after primary resolves)
+| Primary | Close as dup |
+|---------|-------------|
+| {{repo}} [#{{primary}}]({{url}}) | [#{{dup}}]({{url}}) |
+
+### ✅ Verify-and-close (fixed upstream)
+| Issue | Reason |
+|-------|--------|
+| {{repo}} [#{{n}}]({{url}}) | {{upstream fix ref and verification step}} |
+
+### 📝 Document & close (draft text for approval first)
+| Repo | Issues | Topic |
+|------|--------|-------|
+| {{repo}} | [#{{n}}]({{url}}), ... | {{one-line doc topic}} |
+
+### ⛓️ Ordering / "ship-together" chains
+- **{{chain name}}:** #{{a}} → #{{b}} → #{{c}} - {{why}}
+
+---
+
+## Open questions for you
+
+1. {{question requiring owner judgment, not agent guess}}
+2. ...
+
+---
+
+## Next steps
+
+These issues are ready to assign to GitHub Copilot today - scope is clear, no in-module blockers, PR will run against the canonical AVM pipeline:
+
+- [#{{n}}]({{url}}) - {{one-line scope}}
+- [#{{n}}]({{url}}) + [#{{n}}]({{url}}) - {{scope}} (assign **#{{primary}}**, group #{{secondary}} into the same PR)
+
+{{if any already-assigned: "[#{{n}}]({{url}}) is already assigned to Copilot."}}
+
+Reply "go" to assign all of the above in one batch, or list the numbers you want (for example `go: 160, 157, 73`).
+```
+
+**Template rules:**
+
+- Do not include a separate "Executive Summary" section. The Triage summary + Module issues analysed at the top are the summary.
+- Use only 3 priority tiers: 🔴 High, 🟡 Medium, ⚪ Low. No "Med-High" or intermediate tiers - if in doubt, round up to High.
+- Drop the "% unblocked delegate" column from the breakdown table; the Copilot-ready-now count in the Triage summary is sufficient.
+- Column headers in the per-module table must match the Triage summary vocabulary: **Copilot-ready now**, **Copilot-ready (blocked)**, **Needs owner**. Do not use "Delegate" / "Human" column names.
+- If a chain section (duplicates, verify-and-close, document-close, PR-in-flight) is empty, omit the section entirely rather than leaving an empty table.
+- Every issue reference must be a markdown link to its GitHub URL on first mention in each section. Use bare `#N` for repeat references inside the same row.
+- In the "Ordering / ship-together chains" and "Open questions for you" sections, link **every** `#N` reference - these sections are scanned for clickable navigation, so do not leave bare issue numbers.
+- Keep "Open questions" to decisions only the owner can make (ownership, design trade-offs, ping-vs-close). Do not ask what the agent can infer from the thread.
+- Place the report at the path the orchestrator specifies; default is `report.md` in the current working directory. If a dated filename is requested, use `triage-report-{{YYYY-MM-DD}}.md`.
+
+---
+
 ## Appendix A - AVM Bot Labels
 
 | Label | Meaning |
@@ -283,8 +398,9 @@ gh issue close <number> --repo Azure/<repo>
 gh issue list --repo Azure/<repo> --state open --limit 200 \
   --json number,title,labels,assignees,createdAt,updatedAt
 
-# Fallback if SAML/SSO blocks gh
-curl -sS "https://api.github.com/repos/Azure/<repo>/issues?state=open&per_page=100"
+# Authenticated curl fallback (after `gh auth refresh -s read:org` for SSO)
+curl -sS -H "Authorization: Bearer $(gh auth token)" \
+  "https://api.github.com/repos/Azure/<repo>/issues?state=open&per_page=100"
 
 # Bicep shared repo - search body+title for slash path
 q='repo:Azure/bicep-registry-modules is:issue is:open "avm/res/<path>"'
@@ -304,8 +420,28 @@ curl -sS "https://api.github.com/repos/Azure/<repo>/issues/<number>" \
 gh issue edit <number> --repo Azure/<repo> --add-assignee app/copilot
 ```
 
-## Appendix C - Rate-Limit & SSO Survival
+## Appendix C - Authentication, Rate-Limit & SSO Survival
 
-- **Secondary rate limit on Search API:** sleep ≥7s between search queries.
-- **SAML/SSO blocks `gh`:** unauthenticated `curl` to public REST API works for read-only ops on public repos. Use `gh` only for writes.
+**Authenticate `gh` first.** Always prefer an authenticated `gh` session over unauthenticated `curl`:
+
+```bash
+# One-time login (opens browser)
+gh auth login -h github.com -p https -w
+
+# Authorize SAML/SSO for the Azure org (required for Azure/* repos)
+gh auth refresh -h github.com -s read:org
+gh auth status   # confirm "Token scopes" includes the org under SSO
+```
+
+If `gh` commands against `Azure/*` return `SAML enforcement`, open the URL printed by `gh` and click **Authorize** for the Azure SSO session, then re-run. The higher authenticated rate limit (5000 req/h) is needed for any non-trivial triage run.
+
+- **Multiple `gh` accounts:** `gh auth status` shows all logged-in accounts. If the active account is not SSO-authorized for the Azure org but another account is, switch with `gh auth switch --user <authorized-account>` before harvesting. Check with: `gh issue list --repo Azure/bicep-registry-modules --limit 1` - a clean result confirms SSO is good for this session.
+
+- **Authenticated `curl` fallback:** if you must use `curl` (scripts, Search API), pass the token so you get the 5000/h limit and access to org-gated content:
+  ```bash
+  curl -sS -H "Authorization: Bearer $(gh auth token)" \
+    "https://api.github.com/repos/Azure/<repo>/issues?state=open&per_page=100"
+  ```
+- **Unauthenticated `curl` is last-resort only:** works for public repos but hits the 60 req/h anonymous limit fast and will not see SSO-gated content. Do not use for a full triage.
+- **Secondary rate limit on Search API:** sleep ≥7s between search queries even when authenticated.
 - **Large JSON outputs:** pipe through `python3 -c` to filter early; don't dump raw JSON into the triage workspace.
