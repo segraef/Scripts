@@ -2,7 +2,8 @@
 description: "Triage open GitHub issues across the Azure Verified Modules (AVM) repos an owner maintains. Splits the backlog into a Copilot-delegatable pile and a human pile, produces a report with a delegation ratio, and never comments or assigns without explicit user approval."
 name: "AVM Owner Triage"
 model: "Claude Opus 4.7"
-tools: [vscode, execute, read, agent, edit, search, web, browser, 'github/*', 'microsoft.docs.mcp/*', todo]
+tools: [vscode, execute, read, agent, edit, search, web, browser, 'github/*', 'microsoft.docs.mcp/*', 'terraform.mcp/*', todo]
+argument-hint: The GitHub owner alias to triage, and optionally a target report path, e.g., "octocat" or "octocat ~/triage/report.md".
 ---
 
 # AVM Owner Triage Agent
@@ -30,6 +31,14 @@ The percentage of the backlog that lands in the delegate pile is the quality met
 
 Invoke this agent and ask it to run a full triage across your modules. Provide your GitHub alias up front (e.g. `octocat`); if you don't, the agent asks once before proceeding.
 
+**Report output location.** If the caller does not specify a target path, the agent writes the report to:
+
+```
+./avm-triage-<OWNER_ALIAS>-<YYYY-MM-DD>.md
+```
+
+in the current working directory. The dated, alias-qualified filename avoids clobbering prior runs and makes multi-owner or multi-day runs sort naturally. To override, pass an explicit path (for example `report.md`, or `~/triage/<owner>/<date>.md`).
+
 ---
 
 ## Section 1 - Module Discovery
@@ -40,6 +49,42 @@ Using the user-supplied alias `<OWNER_ALIAS>`, scan the four AVM module indexes 
 - https://azure.github.io/Azure-Verified-Modules/indexes/terraform/tf-pattern-modules/#published-modules-----
 - https://azure.github.io/Azure-Verified-Modules/indexes/bicep/bicep-resource-modules/#published-modules-----
 - https://azure.github.io/Azure-Verified-Modules/indexes/bicep/bicep-pattern-modules/#published-modules-----
+
+### Raw-source fallback (**source of truth**)
+
+The rendered index pages above can fail to load, be truncated, or lag the canonical data. The authoritative source is the raw CSV/JSON in the AVM repo:
+
+- https://github.com/Azure/Azure-Verified-Modules/tree/main/docs/static/module-indexes
+
+Files (fetch the `raw.githubusercontent.com` version for parsing):
+
+| File | Covers |
+|------|--------|
+| `BicepResourceModules.csv` | Bicep `avm/res/*` modules |
+| `BicepPatternModules.csv` | Bicep `avm/ptn/*` modules |
+| `BicepUtilityModules.csv` | Bicep `avm/utl/*` modules |
+| `BicepMARModules.json` | Mirrored MAR registry entries (machine-generated) |
+| `TerraformResourceModules.csv` | Terraform `avm-res-*` modules |
+| `TerraformPatternModules.csv` | Terraform `avm-ptn-*` modules |
+| `TerraformUtilityModules.csv` | Terraform `avm-utl-*` modules |
+
+Canonical fetch + filter per alias:
+
+```bash
+BASE="https://raw.githubusercontent.com/Azure/Azure-Verified-Modules/main/docs/static/module-indexes"
+for f in BicepResourceModules.csv BicepPatternModules.csv BicepUtilityModules.csv \
+         TerraformResourceModules.csv TerraformPatternModules.csv TerraformUtilityModules.csv; do
+  echo "== $f =="
+  curl -sS "$BASE/$f" | awk -v a="<OWNER_ALIAS>" -F',' 'NR==1 || tolower($0) ~ tolower(a)'
+done
+```
+
+Use the raw source whenever:
+- A rendered index page times out, returns empty, or is clearly out of date.
+- You need to script discovery (the CSVs parse deterministically; the HTML pages do not).
+- An ownership transfer or new module has landed recently - raw CSV updates minutes after merge; the rendered site can lag a day.
+
+Cite which source produced the final module list in the report (rendered pages vs raw CSV) so the user can audit.
 
 For each owned module, resolve:
 - **Repo URL** - Terraform modules live in their own `Azure/terraform-azurerm-avm-<res|ptn>-<name>` repo; Bicep modules live collectively in `Azure/bicep-registry-modules`.
@@ -100,6 +145,18 @@ Before classifying, diff the current open list against the previous report. Reco
 - ➕ **New** (opened since last run) - needs deep read
 - 🔄 **Updated** (new comments or label churn) - may need re-classification
 - 🔁 **Re-opened duplicates** - primary resolved but dup still open → verify and close
+
+### 2d. Shallow clone of each module (mandatory)
+
+Dependency analysis needs the actual code, not just issue threads. For every module in scope, pull a read-only shallow clone:
+
+```bash
+mkdir -p /tmp/triage-<owner>/repos
+cd /tmp/triage-<owner>/repos
+gh repo clone Azure/<repo> -- --depth=1    # per module
+```
+
+Keep the clones for the duration of the triage. Section 5 Pass 1 (code-delta analysis) greps these clones to compute code-surface fingerprints per issue.
 
 
 ---
@@ -179,22 +236,80 @@ Priority: 🔴 High (blocker, no workaround) | 🟠 Medium-high | 🟡 Medium | 
 
 > 🚫 **Scope: within a single module only.** Never link dependencies across modules/repos. Each module's backlog is triaged in isolation because a Copilot agent working on one repo has no visibility into another. Cross-module observations (e.g., "both AI Foundry and AI Landing Zone have DNS issues") are interesting for your roadmap but do **not** belong in the dependency matrix.
 
-After classifying all issues for one module, run a deliberate second pass over **that module's issues only** to identify:
+Dependency analysis runs in **three passes**: code-delta, upstream-schema-delta, thread-declared.
+
+### Pass 1 - Code-delta analysis (**MANDATORY**)
+
+Issue threads only reveal *claimed* dependencies. Real dependencies live in the code: shared variables, shared resources, overlapping files, provider version pins, open PR branches against the same lines. A pure thread-based triage produces false positives (two "networking" issues that touch disjoint resources) and false negatives (two unrelated-sounding issues that both edit `locals.tf`).
+
+For each issue in the module, compute a **code surface fingerprint** before declaring dependencies. Use a shallow read-only clone or the GitHub API - do not modify anything:
+
+1. **File overlap.** What files would the fix plausibly touch? Infer from the issue body (resource names, variable names, module inputs mentioned) and grep the repo for those symbols:
+   ```bash
+   gh repo clone Azure/<repo> /tmp/triage-<repo> -- --depth=1
+   cd /tmp/triage-<repo>
+   grep -rln "<symbol>" --include="*.tf" --include="*.bicep" --include="*.md"
+   ```
+2. **Symbol overlap.** Same variable, resource block, or module input across issues? A matching symbol in two issues is a hard signal they must be coordinated, regardless of what the threads say.
+3. **Open-branch / PR conflict.** If a thread references a fork branch (`github.com/<user>/<fork>/tree/<branch>`) or a PR number, pull the diff and record which files it touches:
+   ```bash
+   gh pr view <N> --repo Azure/<repo> --json files --jq '.files[].path'
+   gh api repos/<user>/<fork>/compare/main...<branch> --jq '.files[].filename'
+   ```
+   Any sibling issue whose surface overlaps that diff must ship **after** the PR merges or be folded into it.
+4. **Provider / version pins.** Note any `required_providers`, `required_version`, preview-API usage, or upstream dependency referenced by the issue. Issues that require different pins of the same provider are a ship-order dependency even if the code surfaces don't overlap.
+
+Record per issue: `Code surface: <files>; symbols: <names>; overlaps: #<n>, #<n>; blocked by PR/branch: <ref or none>`. Two issues with overlapping surfaces become a chain even if the threads don't mention each other. Two issues in the same thematic cluster with disjoint surfaces can be **un**chained.
+
+### Pass 2 - Upstream-schema delta (**MANDATORY** for any issue citing a missing/unsupported property)
+
+An issue that claims *"property X is not supported"* or *"need to expose Y"* must be validated against the **authoritative resource-provider schema** before it can be marked Copilot-ready or chained. The module's own code is not the source of truth; the upstream schema is. Three sources, use all that apply.
+
+**Tool preference (use MCP first, curl fallback):**
+
+| Source | Primary tool | Fallback |
+|--------|-------------|----------|
+| Azure resource reference (Bicep / ARM / AzAPI schema on learn.microsoft.com) | `microsoft_docs_search` to locate the right page, then `microsoft_docs_fetch` for full schema | `curl -sS "https://learn.microsoft.com/.../<page>"` and parse the HTML; or `microsoft_code_sample_search` for usage snippets |
+| Terraform registry - `azurerm` / `azapi` providers | `mcp_terraform_get_latest_provider_version`, `mcp_terraform_get_provider_details`, `mcp_terraform_get_provider_capabilities` | `curl -sS "https://registry.terraform.io/v1/providers/hashicorp/azurerm"` for version; browse `https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/<resource>` for attributes |
+
+If an MCP server is not enabled in the session, note the fallback you used in the issue's upstream-evidence line so the owner can audit which source was consulted.
+
+1. **Azure resource reference (Bicep / ARM / AzAPI).** Single canonical page per `{resource provider}/{api-version}/{resource type}`, with a language pivot. Confirms the property exists in that API version, its type, whether it's required, and its preview/GA status.
+   - Bicep: `https://learn.microsoft.com/azure/templates/{rp}/{api-version}/{resource}?pivots=deployment-language-bicep`
+   - AzAPI (Terraform): `https://learn.microsoft.com/azure/templates/{rp}/{api-version}/{resource}?pivots=deployment-language-terraform`
+   - ARM JSON: `...?pivots=deployment-language-arm-template`
+   - Example: `https://learn.microsoft.com/en-us/azure/templates/microsoft.cognitiveservices/2025-09-01/accounts?pivots=deployment-language-bicep`
+   - **Preferred:** call `microsoft_docs_search` with the resource type (e.g. `"Microsoft.CognitiveServices/accounts Bicep"`), then `microsoft_docs_fetch` on the returned URL. **Fallback:** `curl` the URL and grep the schema block; confirm the listed `apiVersion`.
+2. **Terraform registry - `azurerm`.** For AVM Terraform modules backed by `azurerm`, the [Terraform registry](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs) is the source of truth for what the provider actually exposes today. **Preferred:** `mcp_terraform_get_latest_provider_version` + `mcp_terraform_get_provider_details` for `hashicorp/azurerm`. **Fallback:** `curl https://registry.terraform.io/v1/providers/hashicorp/azurerm` for the current version; for per-resource attributes, fetch `https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/<resource>` (public, no auth). A feature that exists in the ARM schema but not in `azurerm` means the module needs `azapi` or a provider-feature-request upstream - that is a real dependency, not a module bug.
+3. **Terraform registry - `azapi`.** For the `azapi` fallback path, confirm the resource/type is supported and find the `type = "Microsoft.{rp}/{resource}@{api-version}"` form. **Preferred:** `mcp_terraform_get_provider_details` for `azure/azapi`. **Fallback:** `curl https://registry.terraform.io/providers/Azure/azapi/latest/docs`. This pins the exact api-version the fix must target.
+
+What this catches:
+
+- **False bugs.** "Property X is not supported" - schema shows X only exists in an api-version the module isn't using → issue becomes `Needs owner` (bump api-version decision) not `Copilot-ready`.
+- **Preview-API traps.** Schema marks the property as preview → flag as `blocked: post-GA` automatically, matching the [#126](https://github.com/Azure/terraform-azurerm-avm-res-app-managedenvironment/issues/126) pattern.
+- **azurerm vs azapi gap.** ARM schema has the property but `azurerm` provider doesn't → fix requires `azapi` refactor. Multiple issues with the same gap share a root cause and become one chain.
+- **Stale issue detection.** Issue filed 6 months ago claiming *"not supported"* - schema at current api-version now includes it → promote to `Copilot-ready` with a "verify and implement" note.
+
+Record per issue: `Upstream: {rp}/{resource}@{api-version}; property present: yes/no; pivot: bicep|terraform; preview: yes/no; azurerm covers: yes/no; azapi type: Microsoft.X/Y@vZ`.
+
+### Pass 3 - Thread-declared analysis
+
+After the code-delta and upstream-schema passes, run a deliberate third pass over **that module's issues only** to identify:
 
 1. **Duplicates/overlaps** - mark one as dup, close after the other resolves
 2. **Ordering dependencies** - A must land before B
 3. **Conflicting approaches** - issues that pull in opposite directions
-4. **Shared root cause** - multiple symptoms, one fix
-5. **Blocking PRs / fork branches** - linked PR must merge first; don't re-implement. Scan comments for `github.com/<user>/<fork>/tree/<branch>` references.
-6. **"Must ship together" pairs** - independent implementation would break UX
+4. **Shared root cause** - multiple symptoms, one fix (confirmed when code-delta shows same surface or upstream-schema shows the same provider gap)
+5. **Blocking PRs / fork branches** - linked PR must merge first; don't re-implement. Already surfaced by Pass 1 step 3.
+6. **"Must ship together" pairs** - independent implementation would break UX (usually confirmed when code-delta shows the same file or resource block)
 7. **Multi-part issues** - one issue reporting N distinct bugs → recommend splitting so each sub-part is individually tractable
 8. **Dup-of-closed** - when a primary issue closes, reassess its former dups: pull a repro and close as "fixed upstream" OR promote to standalone if still failing
 
-Document as a dependency matrix **per module**.
+Document as a dependency matrix **per module**, citing the Pass 1 / Pass 2 evidence (overlapping file, symbol, PR diff, or upstream schema api-version) for each edge.
 
 ### Why this matters for Copilot delegation
 
-Any issue inside a dependency chain is **not Copilot-ready** until the blocking item is resolved. An autonomous agent given a downstream issue will either recreate work, produce a conflicting fix, or fail silently. Mark the blocked downstream items as `Copilot-ready (after #X)` so they enter the delegate pile only once the gate clears.
+Any issue inside a dependency chain is **not Copilot-ready** until the blocking item is resolved. An autonomous agent given a downstream issue will either recreate work, produce a conflicting fix, or fail silently. Mark the blocked downstream items as `Copilot-ready (after #X)` so they enter the delegate pile only once the gate clears. The code-delta fingerprint and upstream-schema check together justify the "after #X" or "blocked: preview" label; a chain backed only by thread speculation is weak.
 
 ---
 
@@ -298,9 +413,9 @@ The {{unblocked}} Copilot-ready items are the shortlist for assignment after use
 
 ## All Issues - Flat List ({{total}} total)
 
-| # | Module | Title | Type | Priority | Action | Dependencies / Constraints |
-|---|--------|-------|------|----------|--------|---------------------------|
-| [#{{n}}]({{url}}) | {{module}} | {{title}} | {{type}} | {{🔴/🟡/⚪}} {{priority}} | {{action}} | {{deps}} |
+| # | Module | Title | Type | Priority | Action | Dependencies / Code surface / Upstream |
+|---|--------|-------|------|----------|--------|---------------------------------------|
+| [#{{n}}]({{url}}) | {{module}} | {{title}} | {{type}} | {{🔴/🟡/⚪}} {{priority}} | {{action}} | {{deps + code-delta evidence (overlapping files/symbols or PR diff) + upstream-schema evidence (api-version, preview flag, azurerm/azapi gap) when relevant}} |
 
 **Excluded (false positive):** {{list or "none"}}
 
@@ -346,7 +461,7 @@ The {{unblocked}} Copilot-ready items are the shortlist for assignment after use
 | {{repo}} | [#{{n}}]({{url}}), ... | {{one-line doc topic}} |
 
 ### ⛓️ Ordering / "ship-together" chains
-- **{{chain name}}:** #{{a}} → #{{b}} → #{{c}} - {{why}}
+- **{{chain name}}:** #{{a}} → #{{b}} → #{{c}} - {{why (cite the overlapping file/symbol or blocking PR diff from Section 5 Pass 1)}}
 
 ---
 
@@ -379,7 +494,7 @@ Reply "go" to assign all of the above in one batch, or list the numbers you want
 - Every issue reference must be a markdown link to its GitHub URL on first mention in each section. Use bare `#N` for repeat references inside the same row.
 - In the "Ordering / ship-together chains" and "Open questions for you" sections, link **every** `#N` reference - these sections are scanned for clickable navigation, so do not leave bare issue numbers.
 - Keep "Open questions" to decisions only the owner can make (ownership, design trade-offs, ping-vs-close). Do not ask what the agent can infer from the thread.
-- Place the report at the path the orchestrator specifies; default is `report.md` in the current working directory. If a dated filename is requested, use `triage-report-{{YYYY-MM-DD}}.md`.
+- Place the report at the path the caller specifies. If none is given, default to `./avm-triage-<owner_alias>-<YYYY-MM-DD>.md` in the current working directory (see Quick Start).
 
 ---
 
