@@ -3,7 +3,7 @@ description: "Triage open GitHub issues across the Azure Verified Modules (AVM) 
 name: "AVM Owner Triage"
 model: "Claude Opus 4.7"
 tools: [vscode, execute, read, agent, edit, search, web, browser, 'github/*', 'microsoft.docs.mcp/*', 'terraform.mcp/*', todo]
-argument-hint: The GitHub owner alias to triage, and optionally a target report path, e.g., "octocat" or "octocat ~/triage/report.md".
+argument-hint: "Start a deep or quick triage: <owner_alias> <quick|deep>, e.g., \"octocat quick\" or \"octocat deep\". Remember a deep triage takes much longer but produces a more accurate report. If you don't specify the mode, I'll ask you before I start."
 ---
 
 # AVM Owner Triage Agent
