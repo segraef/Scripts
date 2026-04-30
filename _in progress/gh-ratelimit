@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# gh-ratelimit - GitHub API rate-limit monitor for Bash and POSIX-style shells.
+#
+# What it does:
+#   Queries GitHub's /rate_limit endpoint through GitHub CLI and renders the
+#   current API buckets sorted by pressure so the tightest buckets appear first.
+#
+# Requirements:
+#   - gh (GitHub CLI)
+#   - jq
+#   - an authenticated gh session
+#
+# Setup:
+#   macOS:  brew install gh jq
+#   Ubuntu: sudo apt-get install gh jq
+#   Then authenticate once:
+#     gh auth login
+#
+# Notes:
+#   - This script uses gh for both API access and auth context.
+#   - Bash version requires jq for parsing and pretty-printing JSON.
+#   - GitHub's /rate_limit endpoint is exempt from rate limiting, so polling it is safe.
+#
+# Usage:
+#   gh-ratelimit
+#   gh-ratelimit -w
+#   gh-ratelimit -w -i 5
+#   gh-ratelimit -j
+#   gh-ratelimit -q
+#   gh-ratelimit -h
+#
+# Options:
+#   -w, --watch       Refresh continuously.
+#   -i, --interval    Watch refresh interval in seconds. Default: 10.
+#   -j, --json        Print the raw GitHub API response as formatted JSON.
+#   -q, --quiet       Only show buckets that are not full and have a non-zero limit.
+#   -h, --help        Show this help text.
+#
+# Examples:
+#   gh-ratelimit                 # one-time snapshot
+#   gh-ratelimit -q              # only show buckets under pressure
+#   gh-ratelimit -w -i 60        # refresh every 60 seconds
+#   gh-ratelimit -j | jq .       # inspect raw payload
+
+set -euo pipefail
+
+WATCH=0
+INTERVAL=10
+JSON=0
+QUIET=0
+
+show_usage() {
+  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -w|--watch)    WATCH=1 ;;
+    -i|--interval) INTERVAL="${2:-10}"; shift ;;
+    -j|--json)     JSON=1 ;;
+    -q|--quiet)    QUIET=1 ;;
+    -h|--help)
+      show_usage
+      exit 0
+      ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+command -v gh >/dev/null || { echo "gh not installed" >&2; exit 1; }
+command -v jq >/dev/null || { echo "jq not installed" >&2; exit 1; }
+
+if ! gh auth status >/dev/null 2>&1; then
+  echo "gh is installed but not authenticated. Run: gh auth login" >&2
+  exit 1
+fi
+
+# ANSI colours (skip if not a TTY)
+if [[ -t 1 ]]; then
+  C_RESET=$'\033[0m'; C_DIM=$'\033[2m'; C_BOLD=$'\033[1m'
+  C_RED=$'\033[31m'; C_YEL=$'\033[33m'; C_GRN=$'\033[32m'; C_CYN=$'\033[36m'
+else
+  C_RESET=; C_DIM=; C_BOLD=; C_RED=; C_YEL=; C_GRN=; C_CYN=
+fi
+
+bar() {
+  # bar <remaining> <limit> <width>
+  local rem="$1" lim="$2" width="${3:-24}"
+  if (( lim <= 0 )); then printf '%*s' "$width" ''; return; fi
+  local filled=$(( rem * width / lim ))
+  (( filled < 0 )) && filled=0
+  (( filled > width )) && filled=$width
+  local empty=$(( width - filled ))
+  local colour="$C_GRN"
+  local pct=$(( rem * 100 / lim ))
+  if   (( pct < 10 )); then colour="$C_RED"
+  elif (( pct < 33 )); then colour="$C_YEL"
+  fi
+  printf '%s' "$colour"
+  if (( filled > 0 )); then
+    printf '█%.0s' $(seq 1 "$filled")
+  fi
+  printf '%s' "$C_DIM"
+  if (( empty > 0 )); then
+    printf '░%.0s' $(seq 1 "$empty")
+  fi
+  printf '%s' "$C_RESET"
+}
+
+human_reset() {
+  # Seconds-from-now → e.g. "in 31m12s" or "passed"
+  local target="$1" now diff m s
+  now=$(date +%s)
+  diff=$(( target - now ))
+  if (( diff <= 0 )); then echo "now"; return; fi
+  m=$(( diff / 60 )); s=$(( diff % 60 ))
+  if (( m > 0 )); then printf 'in %dm%02ds' "$m" "$s"
+  else                 printf 'in %ds' "$s"
+  fi
+}
+
+render() {
+  local payload
+  if ! payload=$(gh api rate_limit 2>/dev/null); then
+    echo "${C_RED}gh api failed - are you authenticated? (gh auth status)${C_RESET}" >&2
+    return 1
+  fi
+
+  if (( JSON )); then
+    echo "$payload" | jq .
+    return 0
+  fi
+
+  # Header
+  local user host now
+  user=$(gh api user --jq .login 2>/dev/null || echo '?')
+  host=$(gh auth status 2>&1 | awk -F'[ ()]+' '/Logged in to/{print $5; exit}' || echo 'github.com')
+  now=$(date '+%H:%M:%S')
+  printf '%s%sGitHub rate limits%s  user=%s%s%s  host=%s  %s%s%s\n' \
+    "$C_BOLD" "$C_CYN" "$C_RESET" "$C_BOLD" "$user" "$C_RESET" "$host" "$C_DIM" "$now" "$C_RESET"
+  echo
+
+  # Sort: most-pressured (lowest %) first
+  local jq_filter='
+    .resources
+    | to_entries
+    | map({
+        key: .key,
+        rem: .value.remaining,
+        lim: .value.limit,
+        used: .value.used,
+        reset: .value.reset,
+        pct: (if .value.limit > 0 then (.value.remaining * 100 / .value.limit) else 100 end)
+      })
+    | sort_by(.pct)
+    | .[]
+    | [.key, (.rem|tostring), (.lim|tostring), (.used|tostring), (.reset|tostring), ((.pct|floor)|tostring)]
+    | @tsv'
+
+  local key rem lim used reset pct
+  while IFS=$'\t' read -r key rem lim used reset pct; do
+    if (( QUIET )) && (( rem == lim || lim == 0 )); then continue; fi
+    printf '%s%-26s%s %5d/%-5d %s %3d%%  resets %s\n' \
+      "$C_BOLD" "$key" "$C_RESET" \
+      "$rem" "$lim" \
+      "$(bar "$rem" "$lim" 24)" \
+      "$pct" \
+      "$(human_reset "$reset")"
+  done < <(echo "$payload" | jq -r "$jq_filter")
+}
+
+if (( WATCH )); then
+  trap 'tput cnorm 2>/dev/null; exit 0' INT TERM
+  tput civis 2>/dev/null || true
+  while true; do
+    clear
+    render || true
+    printf '\n%srefresh every %ss - ctrl-c to exit%s\n' "$C_DIM" "$INTERVAL" "$C_RESET"
+    sleep "$INTERVAL"
+  done
+else
+  render
+fi
