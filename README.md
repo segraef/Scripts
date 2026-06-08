@@ -1,10 +1,25 @@
 # ![AzureIcon] ![BashIcon] ![PowershellIcon] Scripts
 
-This repository contains Azure and Windows PowerShell scripts for developers and administrators to develop, deploy, and manage Microsoft Azure and Microsoft Windows ecosystem.
+A collection of automation scripts across PowerShell, Bash, Python and JavaScript for Azure, DevOps and general infrastructure tasks.
+
+## Repository structure
+
+| Path | Contents |
+|---|---|
+| [`PowerShell/`](PowerShell/) | Azure / DevOps automation scripts. Start from [`_Template.ps1`](PowerShell/_Template.ps1); shared logging is [`Write-Log.psm1`](PowerShell/Write-Log.psm1). |
+| [`PowerShell/Snippets/`](PowerShell/Snippets/) | Smaller, single-purpose helpers. |
+| [`Bash/`](Bash/) | Shell utilities. Start from [`_Template.sh`](Bash/_Template.sh); shared logging is [`log.sh`](Bash/log.sh). |
+| [`Python/`](Python/) | Python utilities (HIBP breach checks, helpers). |
+| [`flask/`](flask/) | Small Flask web app wrapping the HIBP checks. |
+| [`JavaScript/`](JavaScript/), [`REST/`](REST/), [`graphql/`](graphql/) | Browser snippet, `.http` request samples, GraphQL queries. |
+| [`cheatsheets/`](cheatsheets/) | Quick-reference notes (git, python, rhel). |
+| [`PSScriptAnalyzerSettings.psd1`](PSScriptAnalyzerSettings.psd1) | Lint/format rules enforced by CI. |
+
+This repository was generated from [segraef/Template](https://github.com/segraef/Template) and stays in sync with it via the [Template Sync](.github/workflows/template-sync.yml) workflow.
 
 ## Status
 
-[![SuperLinter](<https://github.com/segraef/Scripts/actions/workflows/linter.yml/badge.svg>)](<https://github.com/segraef/Template/actions/workflows/linter.yml>)
+[![SuperLinter](<https://github.com/segraef/Scripts/actions/workflows/linter.yml/badge.svg>)](<https://github.com/segraef/Scripts/actions/workflows/linter.yml>)
 
 [![PowerShell ScriptAnalyzer](<https://github.com/segraef/Scripts/actions/workflows/scriptanalyzer.yml/badge.svg>)](https://github.com/segraef/Scripts/actions/workflows/scriptanalyzer.yml)
 
@@ -32,20 +47,11 @@ If you would like to become an active contributor to this repository or project,
 <!-- References -->
 
 <!-- Local -->
-[ProjectSetup]: <https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions>
-[CreateFromTemplate]: <https://docs.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-on-github/creating-a-repository-from-a-template>
-[GitHubDocs]: <https://docs.github.com/>
-[AzureDevOpsDocs]: <https://docs.microsoft.com/en-us/azure/devops/?view=azure-devops>
-[GitHubIssues]: <https://github.com/segraef/Template/issues>
+[GitHubIssues]: <https://github.com/segraef/Scripts/issues>
 [Contributing]: CONTRIBUTING.md
 [AzureIcon]: docs/media/MicrosoftAzure-32px.png
 [PowershellIcon]: docs/media/MicrosoftPowerShellCore-32px.png
 [BashIcon]: docs/media/Bash_Logo_black_and_white_icon_only-32px.svg.png
-
-<!-- External -->
-[Az]: <https://img.shields.io/powershellgallery/v/Az.svg?style=flat-square&label=Az>
-[AzGallery]: <https://www.powershellgallery.com/packages/Az/>
-[PowerShellCore]: <https://github.com/PowerShell/PowerShell/releases/latest>
 
 <!-- Docs -->
 [MicrosoftAzureDocs]: <https://docs.microsoft.com/en-us/azure/>

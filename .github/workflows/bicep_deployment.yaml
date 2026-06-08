@@ -1,9 +1,8 @@
 name: Azure Bicep Deployment
 
+# Manual only: the deploy step references ./main.bicep, which does not exist in
+# this repo yet. Add a main.bicep and re-enable a push trigger when ready.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       resource_group:
@@ -41,5 +40,5 @@ jobs:
 
       - name: Deploy Infrastructure using Bicep
         run: |
-          az group create -l $LOCATION -n $RESOURCE_GROUP
-          az deployment group create -f ./main.bicep -g $RESOURCE_GROUP
+          az group create -l "$LOCATION" -n "$RESOURCE_GROUP"
+          az deployment group create -f ./main.bicep -g "$RESOURCE_GROUP"

@@ -1,0 +1,21 @@
+# Files Template Sync must never overwrite in this repository.
+# Syntax follows .gitignore semantics (AndreasAugustin/actions-template-sync).
+
+# Repository identity and history.
+README.md
+CHANGELOG.md
+LICENSE
+.github/CODEOWNERS
+.github/workflows/template-sync.yml
+
+# This repository's own code and content. The template only supplies the
+# shared scaffolding (_Template.ps1, Write-Log.psm1, _Template.sh, log.sh,
+# PSScriptAnalyzerSettings.psd1, linter/scriptanalyzer workflows), which is
+# intentionally NOT ignored so it keeps tracking the template.
+PowerShell/Snippets/**
+Python/**
+flask/**
+JavaScript/**
+REST/**
+graphql/**
+cheatsheets/**
