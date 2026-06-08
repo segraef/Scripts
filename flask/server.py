@@ -1,4 +1,14 @@
-import os,requests,hashlib
+"""Flask web front-end for Have I Been Pwned (HIBP) breach checks.
+
+Serves a small UI that lets a user check whether an email address appears in
+known data breaches and whether a password appears in the Pwned Passwords
+range API. The HIBP API key is read from the environment (via a .env file)
+and is never exposed in any response.
+"""
+import os
+import hashlib
+
+import requests
 from flask import Flask, render_template, request
 from dotenv import load_dotenv
 
@@ -10,20 +20,18 @@ load_dotenv()
 # Get the API key from the environment variables
 API_KEY = os.getenv('HIBP_API_KEY')
 
+# Build the HIBP request headers once at module level
+HIBP_HEADERS = {'hibp-api-key': API_KEY}
+
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+
 @app.route('/cheat')
 def cheat():
     return render_template('cheat.html')
-
-
-@app.route('/test/')
-def test():
-    print(f'I got clicked and here is your API key: {API_KEY}')
-    return 'Click. Here is your API key: ' + API_KEY
 
 
 @app.route('/check', methods=['POST'])
@@ -35,9 +43,9 @@ def check():
         return "No email or password provided", 400
     if email:
         # Send the email to the HIBP API
-        headers = {'hibp-api-key': API_KEY}
         response = requests.get(
-            f'https://haveibeenpwned.com/api/v3/breachedaccount/{email}', headers=headers)
+            f'https://haveibeenpwned.com/api/v3/breachedaccount/{email}',
+            headers=HIBP_HEADERS)
         if response.status_code == 404:
             result["email"] = "Email not found in data breaches"
         elif response.status_code != 200:
@@ -55,9 +63,9 @@ def check():
         suffix = hashed_password[5:]
 
         # Send the hashed password to the HIBP API
-        headers = {'hibp-api-key': API_KEY}
         response = requests.get(
-            f'https://api.pwnedpasswords.com/range/{prefix}', headers=headers)
+            f'https://api.pwnedpasswords.com/range/{prefix}',
+            headers=HIBP_HEADERS)
         if response.status_code != 200:
             result["password"] = "Error checking password"
         else:
@@ -73,4 +81,4 @@ def check():
 
 
 if __name__ == '__main__':
-    app.run(port=5001, debug=True)
+    app.run(port=5001, debug=os.getenv('FLASK_DEBUG', 'false').lower() == 'true')

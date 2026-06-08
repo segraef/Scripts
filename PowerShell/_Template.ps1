@@ -1,91 +1,76 @@
-#Requires -Version 5.1
+#Requires -Version 7.0
 
 <#
 .SYNOPSIS
-  <Overview of script>
+  One-line summary of what this script does.
 
 .DESCRIPTION
-  <Brief description of script>
+  Longer description: what it automates, its prerequisites (modules, CLIs,
+  authentication) and any side effects it has on the environment.
 
-.PARAMETER <Parameter_Name>
-    <Brief description of parameter input required. Repeat this attribute if required>
+.PARAMETER Name
+  Describe each parameter. Repeat this section for every parameter.
 
 .INPUTS
-  <Inputs if any, otherwise state None>
+  None. Or describe the objects accepted from the pipeline.
 
 .OUTPUTS
-  <Outputs if any, otherwise state None - example: Log file stored in C:\Windows\Temp\<name>.log>
-
-.NOTES
-  Version:        1.0
-  Author:         <Name>
-  Creation Date:  <Date>
-  Purpose/Change: Initial script development
+  None. Or describe the objects / files produced.
 
 .EXAMPLE
-  <Example goes here. Repeat this attribute for more than one example>
+  ./Verb-Noun.ps1 -Name 'value'
+  Describe what this example does.
+
+.NOTES
+  Author: Sebastian Gräf
+  Repo:   https://github.com/segraef/Scripts
+  Version history is tracked in git, not in this header.
 #>
 
-#region Parameters
-
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess)]
 param
 (
-  [Parameter()]
-  [String]$String,
-  [Parameter()]
-  [SecureString]$SecureString
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [string]$Name,
+
+    [Parameter()]
+    [securestring]$Secret
 )
 
-#endregion
+#region Initialisation
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-#region Initialisations
-
-$ErrorActionPreference = "Continue"
-$VerbosePreference = "Continue"
-
-Import-Module ..\Write-Log.ps1
-
-#endregion
-
-#region Declarations
+Import-Module "$PSScriptRoot/Write-Log.psm1" -Force
 #endregion
 
 #region Functions
+function Invoke-Example {
+    [CmdletBinding(SupportsShouldProcess)]
+    param
+    (
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name
+    )
 
-function FunctionName {
-  Param()
+    Write-Log "Processing '$Name'."
 
-  begin {
-    Write-Log "Let's start !"
-  }
-
-  process {
-    try {
-      Write-Output "Hello Template !"
+    if ($PSCmdlet.ShouldProcess($Name, 'Process')) {
+        try {
+            Write-Output "Hello, $Name."
+        }
+        catch {
+            Write-Log -Message "Failed to process '$Name'." -ErrorRecord $_
+            throw
+        }
     }
-
-    catch {
-      Write-Output $_
-      Write-Log $_ -Warning
-    }
-  }
-
-  end {
-    if ($?) {
-      Write-Log "Completed successfully !"
-    }
-  }
 }
-
 #endregion
 
 #region Execution
-
-Write-Log "Executing $($MyInvocation.MyCommand.Name)"
-
-FunctionName -String $String -SecureString $SecureString
-
-Write-Log "Finished executing $($MyInvocation.MyCommand.Name)"
-
+Write-Log "Executing $($MyInvocation.MyCommand.Name)."
+Invoke-Example -Name $Name
+Write-Log "Finished $($MyInvocation.MyCommand.Name)."
 #endregion

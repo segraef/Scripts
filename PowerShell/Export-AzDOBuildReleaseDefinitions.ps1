@@ -1,149 +1,268 @@
-﻿<#
-    .SYNOPSIS
-      Exports build and release definitions from a source Azure DevOps project and imports these into a destination project.
-      If no destination project give it will only export build and release defintions and save it as JSON.
+#Requires -Version 7.0
 
-    .DESCRIPTION
-      The script will create two folders with all exported build and release definitions as JSON.
-      Once a destination organization and project are given, the script will import the exported
-      build and release defintions into the target project.
+<#
+.SYNOPSIS
+  Exports build and release definitions from a source Azure DevOps project and optionally imports them into a destination project.
 
-      Required Modules (will be installed if not present): VSTeam
+.DESCRIPTION
+  Connects to a source Azure DevOps organisation/project with VSTeam and exports every
+  build and release definition to JSON, written into two folders named
+  "<account>.<project>.BuildDefinitions" and "<account>.<project>.ReleaseDefinitions".
 
-    .PARAMETER sourceAccount
-        Azure DevOps source account/organization.
+  When a destination account and project are also supplied, the exported JSON files are
+  imported into the destination project. If no destination is given, the script only
+  exports and saves the definitions as JSON.
 
-    .PARAMETER sourceProject
-        Azure DevOps source project.
+  Required Modules (installed if not present): VSTeam.
 
-    .PARAMETER sourcePersonalAccessToken
-        Azure DevOps source Personal Access Token.
+.PARAMETER sourceAccount
+  Azure DevOps source account/organisation.
 
-    .PARAMETER sourcePersonalAccessToken
-        Azure DevOps source Secure Access Token.
+.PARAMETER sourceProject
+  Azure DevOps source project.
 
-    .PARAMETER destinationAccount
-        Azure DevOps destination account/organization.
+.PARAMETER sourcePersonalAccessToken
+  Azure DevOps source Personal Access Token (plain string, used with -PersonalAccessToken).
 
-    .PARAMETER destinationProject
-        Azure DevOps destination account/organization.
+.PARAMETER sourceSecureAccessToken
+  Azure DevOps source Secure Access Token (used with -SecurePersonalAccessToken when no plain PAT is supplied).
 
-    .PARAMETER destinationPersonalAccessToken
-        Azure DevOps destination Personal Access Token.
+.PARAMETER destinationAccount
+  Azure DevOps destination account/organisation.
 
-    .PARAMETER destinationSecureAccessToken
-        Azure DevOps destination Secure Access Token.
+.PARAMETER destinationProject
+  Azure DevOps destination project.
 
-    .NOTES
-      Version:        1.0
-      Author:         Sebastian Gräf
-      Email:          sebastian@graef.io
-      Creation Date:  08/13/2019
-      Purpose/Change: Initial script development
+.PARAMETER destinationPersonalAccessToken
+  Azure DevOps destination Personal Access Token (plain string, used with -PersonalAccessToken).
+
+.PARAMETER destinationSecureAccessToken
+  Azure DevOps destination Secure Access Token (used with -SecurePersonalAccessToken when no plain PAT is supplied).
+
+.INPUTS
+  None.
+
+.OUTPUTS
+  JSON files for each build and release definition, written to two folders in the current directory.
+
+.EXAMPLE
+  ./Export-AzDOBuildReleaseDefinitions.ps1 -sourceAccount 'contoso' -sourceProject 'Web' -sourcePersonalAccessToken 'pat'
+  Exports all build and release definitions from the Web project to JSON.
+
+.EXAMPLE
+  ./Export-AzDOBuildReleaseDefinitions.ps1 -sourceAccount 'contoso' -sourceProject 'Web' -sourcePersonalAccessToken 'pat' -destinationAccount 'fabrikam' -destinationProject 'Web' -destinationPersonalAccessToken 'pat2'
+  Exports definitions from the source project and imports them into the destination project.
+
+.NOTES
+  Author: Sebastian Gräf
+  Repo:   https://github.com/segraef/Scripts
+  Version history is tracked in git, not in this header.
 #>
 
-#region Parameters
-
-param (
-    [Parameter(Mandatory = $true)]
+[CmdletBinding(SupportsShouldProcess)]
+param
+(
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
     [string]$sourceAccount,
-    [Parameter(Mandatory = $true)]
+
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
     [string]$sourceProject,
-    [Parameter(Mandatory = $true)]
+
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
     [string]$sourcePersonalAccessToken,
-    [Parameter(Mandatory = $false)]
+
+    [Parameter()]
     [securestring]$sourceSecureAccessToken,
-    [Parameter(Mandatory = $False)]
+
+    [Parameter()]
     [string]$destinationAccount,
-    [Parameter(Mandatory = $False)]
+
+    [Parameter()]
     [string]$destinationProject,
-    [Parameter(Mandatory = $False)]
+
+    [Parameter()]
     [string]$destinationPersonalAccessToken,
-    [Parameter(Mandatory = $False)]
+
+    [Parameter()]
     [securestring]$destinationSecureAccessToken
 )
 
-#endregion
+#region Initialisation
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-#region Initialisations
-
-$ErrorActionPreference = "Stop"
-$VerbosePreference = "Continue"
-
-Import-Module ..\Load-Module.ps1
-
-#endregion
-
-#region Declarations
+Import-Module "$PSScriptRoot/Write-Log.psm1" -Force
 #endregion
 
 #region Functions
+function Initialize-RequiredModule {
+    <#
+    .SYNOPSIS
+      Ensure a PowerShell module is available, installing it from the gallery if required.
+
+    .DESCRIPTION
+      Imports the named module if it is already available, otherwise installs it for the
+      current user from the PowerShell Gallery and then imports it.
+
+    .PARAMETER Name
+      The module name to ensure is loaded.
+
+    .EXAMPLE
+      Initialize-RequiredModule -Name 'VSTeam'
+      Imports VSTeam, installing it first if it is not present.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param
+    (
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name
+    )
+
+    if (Get-Module -Name $Name) {
+        Write-Log "Module '$Name' is already imported."
+        return
+    }
+
+    try {
+        if (-not (Get-Module -ListAvailable -Name $Name)) {
+            if ($PSCmdlet.ShouldProcess($Name, 'Install module')) {
+                Write-Log "Installing module '$Name' from the gallery."
+                Install-Module -Name $Name -Force -Scope CurrentUser
+            }
+        }
+
+        Import-Module -Name $Name
+        Write-Log "Module '$Name' imported."
+    }
+    catch {
+        Write-Log -Message "Failed to ensure module '$Name'." -ErrorRecord $_
+        throw
+    }
+}
 #endregion
 
 #region Execution
+Write-Log "Executing $($MyInvocation.MyCommand.Name)."
 
-Load-Module VSTeam
+Initialize-RequiredModule -Name 'VSTeam'
+
+$buildDefinitionDirectory = $null
+$releaseDefinitionDirectory = $null
 
 if ($sourceAccount -and $sourceProject) {
-    # Set the source project
+    # Set the source project.
     if ($sourcePersonalAccessToken) {
         Set-VSTeamAccount -Account $sourceAccount -PersonalAccessToken $sourcePersonalAccessToken
     }
-    elseif ($sourcePersonalAccessToken) {
+    elseif ($sourceSecureAccessToken) {
         Set-VSTeamAccount -Account $sourceAccount -SecurePersonalAccessToken $sourceSecureAccessToken
     }
     else {
-        Write-Output "Exiting script since no token given"
+        Write-Log 'Exiting script since no source token given.' -Level Warning
+        return
     }
 
-    # Get all release definitions
-    $releaseDefinitions = Get-VSTeamReleaseDefinition -ProjectName $sourceProject
+    try {
+        # Get all release definitions.
+        $releaseDefinitions = Get-VSTeamReleaseDefinition -ProjectName $sourceProject
 
-    # Get all build definitions
-    $buildDefinitions = Get-VSTeamBuildDefinition -ProjectName $sourceProject
+        # Get all build definitions.
+        $buildDefinitions = Get-VSTeamBuildDefinition -ProjectName $sourceProject
+    }
+    catch {
+        Write-Log -Message "Failed to read definitions from project '$sourceProject'." -ErrorRecord $_
+        throw
+    }
 
-    # Create definition folders
-    $buildDefinitionDirectory = New-Item "$sourceAccount.$sourceProject.BuildDefinitions" -ItemType Directory -Force
-    $releaseDefinitionDirectory = New-Item "$sourceAccount.$sourceProject.ReleaseDefinitions" -ItemType Directory -Force
+    # Create definition folders.
+    if ($PSCmdlet.ShouldProcess("$sourceAccount.$sourceProject", 'Create export folders')) {
+        try {
+            $buildDefinitionDirectory = New-Item "$sourceAccount.$sourceProject.BuildDefinitions" -ItemType Directory -Force
+            $releaseDefinitionDirectory = New-Item "$sourceAccount.$sourceProject.ReleaseDefinitions" -ItemType Directory -Force
+        }
+        catch {
+            Write-Log -Message 'Failed to create export folders.' -ErrorRecord $_
+            throw
+        }
+    }
 
-    # Export build defintions
+    # Export build definitions.
     foreach ($buildDefinition in $buildDefinitions) {
-        $fileName = $buildDefinitionDirectory.FullName + "\" + $buildDefinition.Name + ".json"
-        Get-VSTeamBuildDefinition -ProjectName $sourceProject -Id $buildDefinition.ID -json | Out-File $fileName
+        $fileName = Join-Path $buildDefinitionDirectory.FullName "$($buildDefinition.Name).json"
+        if ($PSCmdlet.ShouldProcess($fileName, 'Export build definition')) {
+            try {
+                Get-VSTeamBuildDefinition -ProjectName $sourceProject -Id $buildDefinition.ID -json | Out-File $fileName
+            }
+            catch {
+                Write-Log -Message "Failed to export build definition '$($buildDefinition.Name)'." -ErrorRecord $_
+                throw
+            }
+        }
     }
-    Write-Output "Your build definitions can be found here: $buildDefinitionDirectory"
+    Write-Log "Your build definitions can be found here: $buildDefinitionDirectory"
 
-    # Export release defintions
+    # Export release definitions.
     foreach ($releaseDefinition in $releaseDefinitions) {
-        $fileName = $releaseDefinitionDirectory.FullName + "\" + $releaseDefinition.Name + ".json"
-        Get-VSTeamReleaseDefinition -ProjectName $sourceProject -Id $releaseDefinition.ID -json | Out-File $fileName
+        $fileName = Join-Path $releaseDefinitionDirectory.FullName "$($releaseDefinition.Name).json"
+        if ($PSCmdlet.ShouldProcess($fileName, 'Export release definition')) {
+            try {
+                Get-VSTeamReleaseDefinition -ProjectName $sourceProject -Id $releaseDefinition.ID -json | Out-File $fileName
+            }
+            catch {
+                Write-Log -Message "Failed to export release definition '$($releaseDefinition.Name)'." -ErrorRecord $_
+                throw
+            }
+        }
     }
-    Write-Output "Your release definitions can be found here: $releaseDefinitionDirectory"
+    Write-Log "Your release definitions can be found here: $releaseDefinitionDirectory"
 }
 
 if ($destinationAccount -and $destinationProject) {
-    # Set the destination project
+    # Set the destination project.
     if ($destinationPersonalAccessToken) {
         Set-VSTeamAccount -Account $destinationAccount -PersonalAccessToken $destinationPersonalAccessToken
     }
     elseif ($destinationSecureAccessToken) {
-        Set-VSTeamAccount -Account $sourceAccount -SecurePersonalAccessToken $destinationSecureAccessToken
+        Set-VSTeamAccount -Account $destinationAccount -SecurePersonalAccessToken $destinationSecureAccessToken
     }
     else {
-        Write-Output "Exiting script since no token given"
+        Write-Log 'Exiting script since no destination token given.' -Level Warning
+        return
     }
 
-    # Import release defintions
-    $releaseDefinitions = Get-ChildItem $releaseDefinitionDirectory.FullName
-    foreach ($releaseDefinition in $releaseDefinitions) {
-        $fileName = $releaseDefinition.FullName
-        Add-VSTeamReleaseDefinition -ProjectName $destinationProject -inFile $fileName
+    if (-not $releaseDefinitionDirectory -or -not $buildDefinitionDirectory) {
+        Write-Log 'No exported definitions available to import; run the export step first.' -Level Warning
+        return
     }
 
-    # Import build defintions
-    $buildDefinitions = Get-ChildItem $buildDefinitionDirectory.FullName
-    foreach ($buildDefinition in $buildDefinitions) {
-        $fileName = $buildDefinition.FullName
-        Add-VSTeamReleaseDefinition -ProjectName $destinationProject -inFile $fileName
+    try {
+        # Import release definitions.
+        $releaseDefinitions = Get-ChildItem $releaseDefinitionDirectory.FullName
+        foreach ($releaseDefinition in $releaseDefinitions) {
+            $fileName = $releaseDefinition.FullName
+            if ($PSCmdlet.ShouldProcess($fileName, 'Import release definition')) {
+                Add-VSTeamReleaseDefinition -ProjectName $destinationProject -inFile $fileName
+            }
+        }
+
+        # Import build definitions.
+        $buildDefinitions = Get-ChildItem $buildDefinitionDirectory.FullName
+        foreach ($buildDefinition in $buildDefinitions) {
+            $fileName = $buildDefinition.FullName
+            if ($PSCmdlet.ShouldProcess($fileName, 'Import build definition')) {
+                Add-VSTeamReleaseDefinition -ProjectName $destinationProject -inFile $fileName
+            }
+        }
+    }
+    catch {
+        Write-Log -Message "Failed to import definitions into project '$destinationProject'." -ErrorRecord $_
+        throw
     }
 }
+
+Write-Log "Finished $($MyInvocation.MyCommand.Name)."
+#endregion

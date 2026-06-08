@@ -1,70 +1,88 @@
-﻿#Requires -Version 5.1
+#Requires -Version 7.0
 
 <#
 .SYNOPSIS
-    Simulates Mouse and Keyboard Activity to avoid Screensaver coming up.
+  Simulates mouse and keyboard activity to stop the screensaver from starting.
 
 .DESCRIPTION
-    Simulates Mouse and Keyboard Activity to avoid Screensaver coming up.
+  Sends a periodic keystroke and nudges the cursor for the requested number of
+  minutes so the session stays active and the screensaver or lock timeout does
+  not trigger. A progress bar shows the remaining time. If no duration is given
+  the script prompts for one.
 
 .PARAMETER Minutes
-	Commit minutes for simulating activity. If no string given you will be asked.
+  Number of minutes to simulate activity for. If omitted, the script prompts
+  for a value.
 
-.PARAMETER Verbose
-    Run in Verbose Mode.
+.INPUTS
+  None. This script does not accept pipeline input.
+
+.OUTPUTS
+  None. Status is written to the host and progress streams.
 
 .EXAMPLE
-	PS C:\> Avtivity-Simulator.ps1 -Minutes 60
+  ./Activity-Simulator.ps1 -Minutes 60
+  Keeps the session active for 60 minutes.
 
 .LINK
-    https://graef.io
+  https://graef.io
 
 .NOTES
-    Author:  Sebastian Gräf
-    Email:   sebastian@graef.io
-    Date:    September 9, 2017
+  Author: Sebastian Gräf
+  Repo:   https://github.com/segraef/Scripts
 #>
 
-[Cmdletbinding()]
-Param (
-	[Parameter(Mandatory = $false)]
-	[string]$Minutes
+#region Parameters
+[CmdletBinding()]
+param
+(
+    [Parameter()]
+    [string]$Minutes
 )
+#endregion
 
-Begin {
-	Write-Verbose " [$($MyInvocation.InvocationName)] :: Start Process"
+#region Execution
+begin {
+    Set-StrictMode -Version Latest
+    $ErrorActionPreference = 'Stop'
+
+    Import-Module "$PSScriptRoot/Write-Log.psm1" -Force
+
+    Write-Verbose " [$($MyInvocation.InvocationName)] :: Start Process"
 }
 
-Process {
-	Add-Type -AssemblyName System.Windows.Forms
-	$shell = New-Object -com "Wscript.Shell"
+process {
+    Add-Type -AssemblyName System.Windows.Forms
+    $shell = New-Object -ComObject 'Wscript.Shell'
 
-	$pshost = Get-Host
-	$pswindow = $pshost.ui.rawui
-	$pswindow.windowtitle = 'Activity-Simulator'
+    $pshost = Get-Host
+    $pswindow = $pshost.ui.rawui
+    $pswindow.windowtitle = 'Activity-Simulator'
 
-	if (!$minutes) {
-		$Minutes = Read-Host -Prompt "Enter minutes for simulating activity"
-	}
+    if (!$Minutes) {
+        $Minutes = Read-Host -Prompt 'Enter minutes for simulating activity'
+    }
 
-	for ($i = 0; $i -lt $Minutes; $i++) {
-		$start = (Get-Date -Format HH:mm:ss)
-		$timeleft = $Minutes - $i
-		Clear-Host
-		Write-Output "Start: $start"
-		$shell.sendkeys(' ')
-		for ($j = 0; $j -lt 6; $j++) {
-			for ($k = 0; $k -lt 10; $k++) {
-				Write-Progress -Activity 'Simulating activity ...' -PercentComplete ($k * 10) -Status "Please wait $timeleft Minutes."
-				Start-Sleep -Seconds 1
-			}
-		}
-		$Pos = [System.Windows.Forms.Cursor]::Position
-		$x = ($pos.X % 500) + 1
-		$y = ($pos.Y % 500) + 1
-		[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point($x, $y)
-	}
+    for ($i = 0; $i -lt $Minutes; $i++) {
+        $start = (Get-Date -Format HH:mm:ss)
+        $timeleft = $Minutes - $i
+        Clear-Host
+        Write-Log "Start: $start"
+        $shell.sendkeys(' ')
+        for ($j = 0; $j -lt 6; $j++) {
+            for ($k = 0; $k -lt 10; $k++) {
+                Write-Progress -Activity 'Simulating activity ...' -PercentComplete ($k * 10) -Status "Please wait $timeleft Minutes."
+                Start-Sleep -Seconds 1
+            }
+        }
+        $pos = [System.Windows.Forms.Cursor]::Position
+        $x = ($pos.X % 500) + 1
+        $y = ($pos.Y % 500) + 1
+        [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point($x, $y)
+    }
 }
-End {
-	Write-Verbose " [$($MyInvocation.InvocationName)] :: End Process"
+
+end {
+    Write-Verbose " [$($MyInvocation.InvocationName)] :: End Process"
 }
+#endregion

@@ -1,18 +1,26 @@
+#Requires -Version 7.0
+
 <#
 .SYNOPSIS
-  Create Azure Pipelines and Build Validation Checks.
+  Create Azure Pipelines and Pull Request Build Validation checks.
 
 .DESCRIPTION
-  This script is used to create Azure Pipelines.
-  If this scripts is run within an Azure pipeline the environment variable AZURE_DEVOPS_EXT_PAT needs to be set with $(System.AccessToken) within your pipeline.
-  Since tty is not supported within a pipelune run, az devops login is using the token which is set via AZURE_DEVOPS_EXT_PAT.
+  Logs in to Azure DevOps with a Personal Access Token, discovers every
+  'pipeline.yml' file under a source path, and creates an Azure Pipeline for
+  each one whose name does not already exist in the target folder. Optionally
+  creates a branch Build Validation policy for each new pipeline.
 
-.REQUIREMENTS
-  - Azure CLI 2.13.0
-  - Azure CLI extension devops 0.18.0
-  - Repository for which the pipeline needs to be configured.
-  - The '<ProjectName>' Build Service needs 'Edit build pipeline' permissions
-    Reference: https://docs.microsoft.com/en-us/azure/devops/pipelines/policies/permissions?view=azure-devops#pipeline-permissions
+  When run inside an Azure Pipeline, set the AZURE_DEVOPS_EXT_PAT environment
+  variable to $(System.AccessToken); az devops login consumes it because tty is
+  not available in a pipeline run.
+
+  Prerequisites:
+    - Azure CLI 2.13.0 or later.
+    - Azure CLI 'azure-devops' extension 0.18.0 or later (auto-installed).
+    - A repository for which the pipeline needs to be configured.
+    - The '<ProjectName>' Build Service must have 'Edit build pipeline'
+      permission. See
+      https://learn.microsoft.com/azure/devops/pipelines/policies/permissions
 
 .PARAMETER OrganizationName
   Required. The name of the Azure DevOps organization.
@@ -24,9 +32,10 @@
   Required. Repository for which the pipeline needs to be configured.
 
 .PARAMETER PAT
-  Required. The access token whith appropirate permissions to create Azure Pipelines.
-  Usually the System.AccessToken from an Azure Pipeline instance run has sufficent permissions as well.
-  Reference: https://docs.microsoft.com/en-us/azure/devops/pipelines/process/access-tokens?view=azure-devops&tabs=yaml#how-do-i-determine-the-job-authorization-scope-of-my-yaml-pipeline
+  Required. The access token with appropriate permissions to create Azure
+  Pipelines, supplied as a SecureString. The System.AccessToken from an Azure
+  Pipeline run usually has sufficient permissions. See
+  https://learn.microsoft.com/azure/devops/pipelines/process/access-tokens
 
 .PARAMETER BranchName
   Optional. Branch name for which the pipelines will be configured.
@@ -36,142 +45,377 @@
   Optional. Path of the folder where the pipeline needs to be created.
 
 .PARAMETER PipelineSourcePath
-  Optional. Path of the pipelines yaml file(s) to be used for creating Azure Pipelines.
-  Based on the given folder all 'pipeline.yml' files will be searched within that and created accordingly.
-  Default is the execution path '/.' of this script.
+  Optional. Path of the pipeline YAML file(s) used for creating Azure Pipelines.
+  All 'pipeline.yml' files under the given folder are searched and created
+  accordingly. Default is the current execution path.
 
-.PARAMETER createBuildValidation
-  Optional. Create Pull Request Build Validation in additon.
+.PARAMETER CreateBuildValidation
+  Optional. Also create a Pull Request Build Validation policy for each new
+  pipeline.
+
+.INPUTS
+  None. This script does not accept pipeline input.
+
+.OUTPUTS
+  None. Creates Azure Pipelines and (optionally) Build Validation policies as a
+  side effect.
 
 .EXAMPLE
-  New-AzPipeline -OrganizationName graef.io -ProjectName Project1 -RepositoryName Repository1 -PAT <PAT>
+  $pat = Read-Host -AsSecureString
+  ./New-AzPipeline.ps1 -OrganizationName graef.io -ProjectName Project1 -RepositoryName Repository1 -PAT $pat
 
-  Create all pipelines for the project 'graef.io/Project1' using a PAT.
-  The Azure Pipelines will be configured to use the default branch 'main' and the given repository name.
+  Create all pipelines for the project 'graef.io/Project1' using a PAT. The
+  pipelines are configured to use the default branch 'main' and the given
+  repository. Each 'pipeline.yml' under the source path produces one Azure
+  Pipeline named after its parent folder.
 
-  Given the 'PipelineSourcePath' and the default source folder patter the script will browse all *.yml files in the
-  and takes the parent folder as the desired name for the Azure Pipeline name to be created.
+.NOTES
+  Author: Sebastian Gräf
+  Repo:   https://github.com/segraef/Scripts
+  Version history is tracked in git, not in this header.
 #>
 
-[CmdletBinding()]
-param (
-  [Parameter(Mandatory = $true, HelpMessage = "Azure DevOps Organization: <OrganizationName>")][string]$OrganizationName,
-  [Parameter(Mandatory = $true, HelpMessage = "Azure DevOps Project: <ProjectName>")][string]$ProjectName,
-  [Parameter(Mandatory = $true, HelpMessage = "Azure DevOps Repository: <RepositoryName>")][string]$RepositoryName,
-  [Parameter(Mandatory = $true, HelpMessage = "Azure DevOps Personal Access Token: <PAT>")][string]$PAT,
-  [Parameter(Mandatory = $false, HelpMessage = "Azure DevOps branch: <BranchName>")][string]$BranchName = "main",
-  [Parameter(Mandatory = $false)][string]$PipelineTargetPath,
-  [Parameter(Mandatory = $false)][string]$PipelineSourcePath,
-  [Parameter(Mandatory = $false)][bool]$CreateBuildValidation = $false
+[CmdletBinding(SupportsShouldProcess)]
+param
+(
+    [Parameter(Mandatory, HelpMessage = 'Azure DevOps Organization: <OrganizationName>')]
+    [ValidateNotNullOrEmpty()]
+    [string]$OrganizationName,
+
+    [Parameter(Mandatory, HelpMessage = 'Azure DevOps Project: <ProjectName>')]
+    [ValidateNotNullOrEmpty()]
+    [string]$ProjectName,
+
+    [Parameter(Mandatory, HelpMessage = 'Azure DevOps Repository: <RepositoryName>')]
+    [ValidateNotNullOrEmpty()]
+    [string]$RepositoryName,
+
+    [Parameter(Mandatory, HelpMessage = 'Azure DevOps Personal Access Token: <PAT>')]
+    [ValidateNotNull()]
+    [securestring]$PAT,
+
+    [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [string]$BranchName = 'main',
+
+    [Parameter()]
+    [string]$PipelineTargetPath,
+
+    [Parameter()]
+    [string]$PipelineSourcePath,
+
+    [Parameter()]
+    [switch]$CreateBuildValidation
 )
 
-try {
-  Write-Verbose "----------------------------------"
-  Write-Verbose "Installing Azure CLI extension devops"
-  az config set extension.use_dynamic_install=yes_without_prompt  # to allow installing extensions without prompt
-  az extension add --upgrade -n azure-devops
+#region Initialisation
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-  Write-Verbose "----------------------------------"
-  Write-Verbose "Check for availability of Azure CLI and the CLI extension for Azure DevOps"
-  $az = az
-  $az = az devops -h
+Import-Module "$PSScriptRoot/Write-Log.psm1" -Force
+#endregion
 
-  Write-Verbose "----------------------------------"
-  Write-Verbose "Trying to login to Azure DevOps project $OrganizationName/$ProjectName with a PAT"
-  $orgUrl = "https://dev.azure.com/$OrganizationName/"
-  $env:AZURE_DEVOPS_EXT_PAT = $PAT
-  Write-Output $env:AZURE_DEVOPS_EXT_PAT | az devops login
+#region Functions
+function Connect-AzDevOpsCli {
+    <#
+    .SYNOPSIS
+      Install the Azure DevOps CLI extension and log in with a PAT.
 
-  Write-Verbose "----------------------------------"
-  Write-Verbose "Set default Azure DevOps configuration to $OrganizationName and $ProjectName"
-  az devops configure --defaults organization="$orgUrl" project="$ProjectName" --use-git-aliases true
+    .DESCRIPTION
+      Ensures dynamic extension install is enabled, adds/upgrades the
+      azure-devops extension, verifies the CLI is available, logs in using the
+      supplied PAT via the AZURE_DEVOPS_EXT_PAT environment variable, and sets
+      the default organization and project.
 
-  Write-Verbose "----------------------------------"
-  Write-Verbose "Get and list all Azure Pipelines in $PipelineTargetPath"
-  $azurePipelines = az pipelines list --organization $orgUrl --project $ProjectName --folder-path $PipelineTargetPath | ConvertFrom-Json | Sort-Object name
-  Write-Verbose "Found $($azurePipelines.Count) Azure Pipeline(s) in $ProjectName"
+    .PARAMETER OrganizationUrl
+      The full Azure DevOps organization URL (https://dev.azure.com/<org>/).
 
-  Write-Verbose "----------------------------------"
-  Write-Verbose "Identify relevant Azure Pipelines to be updated"
-  $PipelineSourcePath = Join-Path (Get-Location).Path $PipelineSourcePath
-  $ymlPipelines = Get-ChildItem -Path $PipelineSourcePath -Recurse | Where-Object { $_.Name -like "pipeline.yml" } | Sort-Object FullName
-  Write-Verbose "Found $($ymlPipelines.Count) YAML Pipeline(s) in $PipelineSourcePath"
+    .PARAMETER ProjectName
+      The Azure DevOps project name to set as the default.
 
-  $pipelinesArray = @()
-  foreach ($pipeline in $ymlPipelines) {
-    $pipeObj = New-Object -TypeName PSCustomObject
-    $fullYmlPath = $pipeline.fullname.replace("\", "/")
-    $pathSplit = $fullYmlPath.Split("/")
-    $ymlPath = $pathSplit[-5] + "/" + $pathSplit[-4] + "/" + $pathSplit[-3] + "/" + $pathSplit[-2] + "/" + $pathSplit[-1] #
-    $parentFolderName = $pathSplit[-3] # here we have the parent folder name
-    $pipelineName = $pathSplit[-3] # which we take for the pipeline name
-    $pipeObj | Add-Member -MemberType NoteProperty -Name ProjectName -Value $ProjectName
-    $pipeObj | Add-Member -MemberType NoteProperty -Name RepositoryName -Value $RepositoryName
-    $pipeObj | Add-Member -MemberType NoteProperty -Name BranchName -Value $BranchName
-    $pipeObj | Add-Member -MemberType NoteProperty -Name FolderPath -Value $PipelineTargetPath
-    $pipeObj | Add-Member -MemberType NoteProperty -Name ymlPath -Value $ymlPath
-    $pipeObj | Add-Member -MemberType NoteProperty -Name parentFolderName -Value $parentFolderName
-    $pipeObj | Add-Member -MemberType NoteProperty -Name pipelineName -Value $pipelineName
+    .PARAMETER PAT
+      The Personal Access Token as a SecureString.
 
-    $pipelinesArray += $pipeObj
-  }
+    .EXAMPLE
+      Connect-AzDevOpsCli -OrganizationUrl 'https://dev.azure.com/graef.io/' -ProjectName Project1 -PAT $pat
+    #>
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$OrganizationUrl,
 
-  $pipelinesToBeSkipped = $pipelinesArray | Where-Object { $_.pipelineName -in $azurePipelines.name }
-  $pipelinesToBeUpdated = $pipelinesArray | Where-Object { $_.pipelineName -notin $azurePipelines.name }
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProjectName,
 
-  if ($pipelinesToBeUpdated.Count -gt 0) {
-    Write-Verbose "----------------------------------"
-    Write-Verbose "$($pipelinesToBeUpdated.Count) Pipeline(s) have been identified to be updated"
-    Write-Verbose "$($pipelinesToBeSkipped.Count) Pipeline(s) will be skipped"
-  }
-  else {
-    Write-Verbose "----------------------------------"
-    Write-Verbose "No Pipelines have been identified. Exiting."
-    exit
-  }
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [securestring]$PAT
+    )
 
-  foreach ($pipeline in $pipelinesToBeUpdated) {
-    Write-Verbose "----------------------------------"
-    Write-Verbose "Create Azure pipeline $($pipeline.pipelineName) ... "
-    $pipelineresult = az pipelines create --project "$($pipeline.ProjectName)" `
-      --organization "$orgUrl" `
-      --repository "$($pipeline.RepositoryName)" `
-      --repository-type tfsgit `
-      --branch "$($pipeline.BranchName)" `
-      --folder-path "$($pipeline.FolderPath)" `
-      --name "$($pipeline.pipelineName)" `
-      --yml-path "$($pipeline.ymlPath)" `
-      --skip-run
-    $pipelineobject = $pipelineresult | ConvertFrom-Json
-    if ($createBuildValidation) {
-      $pathFilter = $pipeline.ymlpath -replace 'pipeline.yml', '*'
-      Write-Verbose "----------------------------------"
-      Write-Verbose "Configuring Master branch Build Validation for $($pipeline.pipelineName)"
-      $buildvalidation = az repos policy build create `
-        --blocking true `
-        --branch master `
-        --build-definition-id $pipelineobject.id `
-        --display-name "Check $($pipeline.pipelineName)" `
-        --manual-queue-only true `
-        --queue-on-source-update-only true `
-        --valid-duration 1440 `
-        --path-filter $pathFilter `
-        --repository-id $pipelineobject.repository.id `
-        --enabled true
+    Write-Log 'Installing Azure CLI extension devops.'
+    az config set extension.use_dynamic_install=yes_without_prompt  # allow installing extensions without prompt
+    az extension add --upgrade -n azure-devops
+
+    Write-Log 'Checking availability of Azure CLI and the Azure DevOps CLI extension.'
+    az | Out-Null
+    az devops -h | Out-Null
+
+    Write-Log "Logging in to Azure DevOps project at $OrganizationUrl$ProjectName with a PAT."
+    $plainPat = [System.Net.NetworkCredential]::new('', $PAT).Password
+    $env:AZURE_DEVOPS_EXT_PAT = $plainPat
+    Write-Output $plainPat | az devops login
+
+    Write-Log "Setting default Azure DevOps configuration to $OrganizationUrl and $ProjectName."
+    az devops configure --defaults organization="$OrganizationUrl" project="$ProjectName" --use-git-aliases true
+}
+
+function Get-ExistingAzPipeline {
+    <#
+    .SYNOPSIS
+      List existing Azure Pipelines in the target folder.
+
+    .DESCRIPTION
+      Queries Azure DevOps for the pipelines that already exist under the target
+      folder so they can be skipped during creation.
+
+    .PARAMETER OrganizationUrl
+      The full Azure DevOps organization URL.
+
+    .PARAMETER ProjectName
+      The Azure DevOps project name.
+
+    .PARAMETER PipelineTargetPath
+      The folder path under which to list pipelines.
+
+    .EXAMPLE
+      Get-ExistingAzPipeline -OrganizationUrl $url -ProjectName Project1 -PipelineTargetPath '/'
+    #>
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$OrganizationUrl,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProjectName,
+
+        [Parameter()]
+        [string]$PipelineTargetPath
+    )
+
+    Write-Log "Listing all Azure Pipelines in $PipelineTargetPath."
+    $azurePipelines = az pipelines list --organization $OrganizationUrl --project $ProjectName --folder-path $PipelineTargetPath |
+        ConvertFrom-Json |
+        Sort-Object name
+    Write-Log "Found $($azurePipelines.Count) Azure Pipeline(s) in $ProjectName."
+
+    Write-Output $azurePipelines
+}
+
+function Get-YamlPipelineDefinition {
+    <#
+    .SYNOPSIS
+      Discover 'pipeline.yml' files and build pipeline definition objects.
+
+    .DESCRIPTION
+      Recursively searches the source path for 'pipeline.yml' files and, for
+      each one, builds a PSCustomObject describing the pipeline to create
+      (project, repository, branch, folder, relative YAML path, and the name
+      derived from the parent folder).
+
+    .PARAMETER PipelineSourcePath
+      The folder under which to search for 'pipeline.yml' files. Resolved
+      relative to the current location.
+
+    .PARAMETER ProjectName
+      The Azure DevOps project name.
+
+    .PARAMETER RepositoryName
+      The repository name for which the pipelines are configured.
+
+    .PARAMETER BranchName
+      The branch name for which the pipelines are configured.
+
+    .PARAMETER PipelineTargetPath
+      The folder path where pipelines are created.
+
+    .EXAMPLE
+      Get-YamlPipelineDefinition -PipelineSourcePath './pipelines' -ProjectName P1 -RepositoryName R1 -BranchName main -PipelineTargetPath '/'
+    #>
+    [CmdletBinding()]
+    param
+    (
+        [Parameter()]
+        [string]$PipelineSourcePath,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProjectName,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RepositoryName,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$BranchName,
+
+        [Parameter()]
+        [string]$PipelineTargetPath
+    )
+
+    $resolvedSourcePath = Join-Path (Get-Location).Path $PipelineSourcePath
+    Write-Log "Identifying relevant Azure Pipelines under $resolvedSourcePath."
+    $ymlPipelines = Get-ChildItem -Path $resolvedSourcePath -Recurse |
+        Where-Object { $_.Name -like 'pipeline.yml' } |
+        Sort-Object FullName
+    Write-Log "Found $($ymlPipelines.Count) YAML Pipeline(s) in $resolvedSourcePath."
+
+    $pipelinesArray = @()
+    foreach ($pipeline in $ymlPipelines) {
+        $fullYmlPath = $pipeline.FullName.Replace('\', '/')
+        $pathSplit = $fullYmlPath.Split('/')
+        $ymlPath = $pathSplit[-5] + '/' + $pathSplit[-4] + '/' + $pathSplit[-3] + '/' + $pathSplit[-2] + '/' + $pathSplit[-1]
+        $parentFolderName = $pathSplit[-3] # parent folder name
+        $pipelineName = $pathSplit[-3]     # used as the pipeline name
+
+        $pipeObj = [PSCustomObject]@{
+            ProjectName = $ProjectName
+            RepositoryName = $RepositoryName
+            BranchName = $BranchName
+            FolderPath = $PipelineTargetPath
+            ymlPath = $ymlPath
+            parentFolderName = $parentFolderName
+            pipelineName = $pipelineName
+        }
+
+        $pipelinesArray += $pipeObj
     }
-  }
 
-  Write-Verbose "----------------------------------"
-  Write-Verbose "$($pipelinesToBeUpdated.Count) Azure pipeline(s) created!"
-  if ($createBuildValidation) {
-    Write-Verbose "$($pipelinesToBeUpdated.Count) Pull Request Build Validation(s) created!"
-  }
-  Write-Verbose "$($pipelinesToBeSkipped.Count) Azure pipeline(s) skipped!"
-  $url = $orgUrl + $ProjectName + "/" + "_build?definitionScope=%5C$PipelineTargetPath"
-  Write-Verbose "----------------------------------"
-  Write-Verbose "Please check your Azure  Pipelines here: $url..."
+    Write-Output $pipelinesArray
+}
+
+function New-AzPipelineDefinition {
+    <#
+    .SYNOPSIS
+      Create a single Azure Pipeline and, optionally, its Build Validation.
+
+    .DESCRIPTION
+      Creates one Azure Pipeline from a discovered definition object. When
+      requested, also creates a branch Build Validation policy scoped to the
+      pipeline's path.
+
+    .PARAMETER Pipeline
+      The pipeline definition object produced by Get-YamlPipelineDefinition.
+
+    .PARAMETER OrganizationUrl
+      The full Azure DevOps organization URL.
+
+    .PARAMETER CreateBuildValidation
+      Also create a Pull Request Build Validation policy for the new pipeline.
+
+    .EXAMPLE
+      New-AzPipelineDefinition -Pipeline $def -OrganizationUrl $url -CreateBuildValidation
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param
+    (
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [psobject]$Pipeline,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$OrganizationUrl,
+
+        [Parameter()]
+        [switch]$CreateBuildValidation
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($Pipeline.pipelineName, 'Create Azure Pipeline')) {
+        return
+    }
+
+    Write-Log "Creating Azure pipeline $($Pipeline.pipelineName)."
+    $pipelineResult = az pipelines create --project "$($Pipeline.ProjectName)" `
+        --organization "$OrganizationUrl" `
+        --repository "$($Pipeline.RepositoryName)" `
+        --repository-type tfsgit `
+        --branch "$($Pipeline.BranchName)" `
+        --folder-path "$($Pipeline.FolderPath)" `
+        --name "$($Pipeline.pipelineName)" `
+        --yml-path "$($Pipeline.ymlPath)" `
+        --skip-run
+    $pipelineObject = $pipelineResult | ConvertFrom-Json
+
+    if ($CreateBuildValidation) {
+        $pathFilter = $Pipeline.ymlPath -replace 'pipeline.yml', '*'
+        Write-Log "Configuring branch Build Validation for $($Pipeline.pipelineName)."
+        az repos policy build create `
+            --blocking true `
+            --branch master `
+            --build-definition-id $pipelineObject.id `
+            --display-name "Check $($Pipeline.pipelineName)" `
+            --manual-queue-only true `
+            --queue-on-source-update-only true `
+            --valid-duration 1440 `
+            --path-filter $pathFilter `
+            --repository-id $pipelineObject.repository.id `
+            --enabled true
+    }
+}
+#endregion
+
+#region Execution
+Write-Log "Executing $($MyInvocation.MyCommand.Name)."
+
+try {
+    $orgUrl = "https://dev.azure.com/$OrganizationName/"
+
+    Connect-AzDevOpsCli -OrganizationUrl $orgUrl -ProjectName $ProjectName -PAT $PAT
+
+    $azurePipelines = Get-ExistingAzPipeline -OrganizationUrl $orgUrl -ProjectName $ProjectName -PipelineTargetPath $PipelineTargetPath
+
+    $pipelinesArray = Get-YamlPipelineDefinition `
+        -PipelineSourcePath $PipelineSourcePath `
+        -ProjectName $ProjectName `
+        -RepositoryName $RepositoryName `
+        -BranchName $BranchName `
+        -PipelineTargetPath $PipelineTargetPath
+
+    $pipelinesToBeSkipped = $pipelinesArray | Where-Object { $_.pipelineName -in $azurePipelines.name }
+    $pipelinesToBeUpdated = $pipelinesArray | Where-Object { $_.pipelineName -notin $azurePipelines.name }
+
+    if ($pipelinesToBeUpdated.Count -eq 0) {
+        Write-Log 'No Pipelines have been identified. Exiting.'
+        return
+    }
+
+    Write-Log "$($pipelinesToBeUpdated.Count) Pipeline(s) have been identified to be updated."
+    Write-Log "$($pipelinesToBeSkipped.Count) Pipeline(s) will be skipped."
+
+    foreach ($pipeline in $pipelinesToBeUpdated) {
+        New-AzPipelineDefinition -Pipeline $pipeline -OrganizationUrl $orgUrl -CreateBuildValidation:$CreateBuildValidation
+    }
+
+    Write-Log "$($pipelinesToBeUpdated.Count) Azure pipeline(s) created!"
+    if ($CreateBuildValidation) {
+        Write-Log "$($pipelinesToBeUpdated.Count) Pull Request Build Validation(s) created!"
+    }
+    Write-Log "$($pipelinesToBeSkipped.Count) Azure pipeline(s) skipped!"
+
+    $url = $orgUrl + $ProjectName + '/' + '_build?definitionScope=%5C' + $PipelineTargetPath
+    Write-Log "Please check your Azure Pipelines here: $url"
 }
 catch {
-  Write-Verbose "----------------------------------"
-  Write-Warning ("Reason: [{0}]" -f $_.Exception.Message)
+    Write-Log -Message ('Reason: [{0}]' -f $_.Exception.Message) -ErrorRecord $_
+    throw
 }
+
+Write-Log "Finished $($MyInvocation.MyCommand.Name)."
+#endregion
