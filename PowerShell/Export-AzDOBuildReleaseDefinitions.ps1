@@ -254,7 +254,7 @@ if ($destinationAccount -and $destinationProject) {
         foreach ($buildDefinition in $buildDefinitions) {
             $fileName = $buildDefinition.FullName
             if ($PSCmdlet.ShouldProcess($fileName, 'Import build definition')) {
-                Add-VSTeamReleaseDefinition -ProjectName $destinationProject -inFile $fileName
+                Add-VSTeamBuildDefinition -ProjectName $destinationProject -inFile $fileName
             }
         }
     }

@@ -269,20 +269,18 @@ function Get-YamlPipelineDefinition {
         [string]$PipelineTargetPath
     )
 
-    $resolvedSourcePath = Join-Path (Get-Location).Path $PipelineSourcePath
+    $sourcePath = if ([string]::IsNullOrWhiteSpace($PipelineSourcePath)) { '.' } else { $PipelineSourcePath }
+    $resolvedSourcePath = (Resolve-Path -Path $sourcePath).Path
     Write-Log "Identifying relevant Azure Pipelines under $resolvedSourcePath."
-    $ymlPipelines = Get-ChildItem -Path $resolvedSourcePath -Recurse |
-        Where-Object { $_.Name -like 'pipeline.yml' } |
+    $ymlPipelines = Get-ChildItem -Path $resolvedSourcePath -Recurse -File -Filter 'pipeline.yml' |
         Sort-Object FullName
     Write-Log "Found $($ymlPipelines.Count) YAML Pipeline(s) in $resolvedSourcePath."
 
     $pipelinesArray = @()
     foreach ($pipeline in $ymlPipelines) {
-        $fullYmlPath = $pipeline.FullName.Replace('\', '/')
-        $pathSplit = $fullYmlPath.Split('/')
-        $ymlPath = $pathSplit[-5] + '/' + $pathSplit[-4] + '/' + $pathSplit[-3] + '/' + $pathSplit[-2] + '/' + $pathSplit[-1]
-        $parentFolderName = $pathSplit[-3] # parent folder name
-        $pipelineName = $pathSplit[-3]     # used as the pipeline name
+        $ymlPath = [IO.Path]::GetRelativePath($resolvedSourcePath, $pipeline.FullName).Replace('\', '/')
+        $parentFolderName = Split-Path -Path (Split-Path -Path $pipeline.FullName -Parent) -Leaf
+        $pipelineName = $parentFolderName  # used as the pipeline name
 
         $pipeObj = [PSCustomObject]@{
             ProjectName = $ProjectName
@@ -358,7 +356,7 @@ function New-AzPipelineDefinition {
         Write-Log "Configuring branch Build Validation for $($Pipeline.pipelineName)."
         az repos policy build create `
             --blocking true `
-            --branch master `
+            --branch "$($Pipeline.BranchName)" `
             --build-definition-id $pipelineObject.id `
             --display-name "Check $($Pipeline.pipelineName)" `
             --manual-queue-only true `

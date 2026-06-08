@@ -9,8 +9,8 @@ The HIBP API key is read from the HIBP_API_KEY environment variable (via a
 .env file). The script exits with an error if the key is not set.
 """
 import os
-import json
 import hashlib
+import getpass
 
 import requests
 from dotenv import load_dotenv
@@ -26,8 +26,18 @@ if not API_KEY:
 API_URL = 'https://haveibeenpwned.com/api/v3'
 PWD_API_URL = 'https://api.pwnedpasswords.com/range'
 
-# Use the API key in the headers
-HEADERS = {'hibp-api-key': API_KEY}
+# Request timeout (seconds) so a stalled network call doesn't hang the CLI.
+REQUEST_TIMEOUT = 10
+
+# HIBP requires both an API key and a descriptive User-Agent.
+HIBP_HEADERS = {
+    'hibp-api-key': API_KEY,
+    'User-Agent': 'segraef-Scripts-hibp-checker',
+}
+
+# The Pwned Passwords range API is a separate, unauthenticated service:
+# never send the HIBP API key to it.
+PWD_HEADERS = {'User-Agent': 'segraef-Scripts-hibp-checker'}
 
 
 def check_email_breach(email):
@@ -37,7 +47,11 @@ def check_email_breach(email):
         email: The email address to look up.
     """
     try:
-        response = requests.get(f'{API_URL}/breachedaccount/{email}', headers=HEADERS)
+        response = requests.get(
+            f'{API_URL}/breachedaccount/{email}',
+            headers=HIBP_HEADERS,
+            timeout=REQUEST_TIMEOUT,
+        )
     except requests.RequestException as exc:
         print(f"Error checking email: {exc}")
         return
@@ -69,7 +83,11 @@ def check_password_breach(password):
     suffix = hashed_password[5:]
 
     try:
-        response = requests.get(f'{PWD_API_URL}/{prefix}', headers=HEADERS)
+        response = requests.get(
+            f'{PWD_API_URL}/{prefix}',
+            headers=PWD_HEADERS,
+            timeout=REQUEST_TIMEOUT,
+        )
     except requests.RequestException as exc:
         print(f"Error checking password: {exc}")
         return
@@ -92,16 +110,21 @@ def check_password_breach(password):
 def list_all_breaches():
     """Fetch and print every breach currently tracked by HIBP."""
     try:
-        response = requests.get(f'{API_URL}/breaches', headers=HEADERS)
+        response = requests.get(
+            f'{API_URL}/breaches',
+            headers=HIBP_HEADERS,
+            timeout=REQUEST_TIMEOUT,
+        )
     except requests.RequestException as exc:
         print(f"Error fetching breaches: {exc}")
         return
 
-    # Print the status code of the response
-    print(response.status_code)
+    if response.status_code != 200:
+        print(f"Error fetching breaches (HTTP {response.status_code}).")
+        return
 
     # Display the breaches
-    breaches = json.loads(response.text)
+    breaches = response.json()
     count = len(breaches)
     for breach in breaches:
         print(f'Name: {breach["Name"]}')
@@ -118,7 +141,7 @@ def main():
     email = input("Enter your email address: ")
     check_email_breach(email)
 
-    password = input("Enter your password: ")
+    password = getpass.getpass("Enter your password: ")
     check_password_breach(password)
 
     list_all_breaches()

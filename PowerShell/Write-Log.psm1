@@ -64,7 +64,8 @@ function Write-Log {
         $line = "[$timestamp] $Message"
 
         if ($ErrorRecord) {
-            $trace = ($ErrorRecord.ScriptStackTrace -split "`n") -join ' <- '
+            $traceText = "$($ErrorRecord.ScriptStackTrace)"
+            $trace = ($traceText -split "`n" | Where-Object { $_ }) -join ' <- '
             Write-Error -Message "$line | $($ErrorRecord.Exception.Message) | $trace"
             return
         }

@@ -19,9 +19,21 @@ load_dotenv()
 
 # Get the API key from the environment variables
 API_KEY = os.getenv('HIBP_API_KEY')
+if not API_KEY:
+    raise RuntimeError('HIBP_API_KEY is not set. Add it to your environment or .env file.')
 
-# Build the HIBP request headers once at module level
-HIBP_HEADERS = {'hibp-api-key': API_KEY}
+# Request timeout (seconds) so a stalled call doesn't hang the web worker.
+REQUEST_TIMEOUT = 10
+
+# HIBP requires both an API key and a descriptive User-Agent.
+HIBP_HEADERS = {
+    'hibp-api-key': API_KEY,
+    'User-Agent': 'segraef-Scripts-hibp-checker',
+}
+
+# The Pwned Passwords range API is a separate, unauthenticated service:
+# never send the HIBP API key to it.
+PWD_HEADERS = {'User-Agent': 'segraef-Scripts-hibp-checker'}
 
 
 @app.route('/')
@@ -45,7 +57,8 @@ def check():
         # Send the email to the HIBP API
         response = requests.get(
             f'https://haveibeenpwned.com/api/v3/breachedaccount/{email}',
-            headers=HIBP_HEADERS)
+            headers=HIBP_HEADERS,
+            timeout=REQUEST_TIMEOUT)
         if response.status_code == 404:
             result["email"] = "Email not found in data breaches"
         elif response.status_code != 200:
@@ -62,10 +75,11 @@ def check():
         prefix = hashed_password[:5]
         suffix = hashed_password[5:]
 
-        # Send the hashed password to the HIBP API
+        # Send the hashed password to the Pwned Passwords API
         response = requests.get(
             f'https://api.pwnedpasswords.com/range/{prefix}',
-            headers=HIBP_HEADERS)
+            headers=PWD_HEADERS,
+            timeout=REQUEST_TIMEOUT)
         if response.status_code != 200:
             result["password"] = "Error checking password"
         else:
