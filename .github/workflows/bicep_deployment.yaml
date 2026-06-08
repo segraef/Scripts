@@ -40,5 +40,5 @@ jobs:
 
       - name: Deploy Infrastructure using Bicep
         run: |
-          az group create -l $LOCATION -n $RESOURCE_GROUP
-          az deployment group create -f ./main.bicep -g $RESOURCE_GROUP
+          az group create -l "$LOCATION" -n "$RESOURCE_GROUP"
+          az deployment group create -f ./main.bicep -g "$RESOURCE_GROUP"

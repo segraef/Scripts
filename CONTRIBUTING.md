@@ -12,12 +12,23 @@ If you are taking the time to mention a problem, even a seemingly minor one, it 
 
 ## Conventions
 
-- **PowerShell** (target 7+): start new scripts from [`PowerShell/_Template.ps1`](PowerShell/_Template.ps1). Comment-based help, `[CmdletBinding()]`, approved verbs, parameter validation, `SupportsShouldProcess` for state-changing operations, and logging via [`Write-Log.psm1`](PowerShell/Write-Log.psm1) (`Import-Module "$PSScriptRoot/Write-Log.psm1"`). Never hardcode tokens, subscription IDs, or account names: take them as parameters (`[securestring]` for secrets).
-- **Bash**: start from [`Bash/_Template.sh`](Bash/_Template.sh); `set -euo pipefail`, quote expansions, source [`Bash/log.sh`](Bash/log.sh) for output.
-- **Linting**: PowerShell is checked by PSScriptAnalyzer against [`PSScriptAnalyzerSettings.psd1`](PSScriptAnalyzerSettings.psd1); Bash by ShellCheck; everything by Super-Linter. All run on push and pull request. Run `Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1` and `shellcheck -x` locally before opening a PR.
+- **PowerShell** (target 7+): start new scripts from
+  [`PowerShell/_Template.ps1`](PowerShell/_Template.ps1). Use comment-based help,
+  `[CmdletBinding()]`, approved verbs, parameter validation, and
+  `SupportsShouldProcess` for state-changing operations. Log via
+  [`Write-Log.psm1`](PowerShell/Write-Log.psm1). Never hardcode tokens,
+  subscription IDs, or account names; take them as parameters
+  (`[securestring]` for secrets).
+- **Bash**: start from [`Bash/_Template.sh`](Bash/_Template.sh); use
+  `set -euo pipefail`, quote expansions, and source
+  [`Bash/log.sh`](Bash/log.sh) for output.
+- **Linting**: PowerShell is checked by PSScriptAnalyzer against
+  [`PSScriptAnalyzerSettings.psd1`](PSScriptAnalyzerSettings.psd1); Bash by
+  ShellCheck; everything by Super-Linter, on push and pull request. Run
+  `Invoke-ScriptAnalyzer` with the settings file and `shellcheck -x` locally
+  before opening a PR.
 
 <!-- References -->
 
 <!-- Local -->
 [GitHubIssues]: <https://github.com/segraef/Scripts/issues>
-[Contributing]: CONTRIBUTING.md

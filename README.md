@@ -47,20 +47,11 @@ If you would like to become an active contributor to this repository or project,
 <!-- References -->
 
 <!-- Local -->
-[ProjectSetup]: <https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions>
-[CreateFromTemplate]: <https://docs.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-on-github/creating-a-repository-from-a-template>
-[GitHubDocs]: <https://docs.github.com/>
-[AzureDevOpsDocs]: <https://docs.microsoft.com/en-us/azure/devops/?view=azure-devops>
 [GitHubIssues]: <https://github.com/segraef/Scripts/issues>
 [Contributing]: CONTRIBUTING.md
 [AzureIcon]: docs/media/MicrosoftAzure-32px.png
 [PowershellIcon]: docs/media/MicrosoftPowerShellCore-32px.png
 [BashIcon]: docs/media/Bash_Logo_black_and_white_icon_only-32px.svg.png
-
-<!-- External -->
-[Az]: <https://img.shields.io/powershellgallery/v/Az.svg?style=flat-square&label=Az>
-[AzGallery]: <https://www.powershellgallery.com/packages/Az/>
-[PowerShellCore]: <https://github.com/PowerShell/PowerShell/releases/latest>
 
 <!-- Docs -->
 [MicrosoftAzureDocs]: <https://docs.microsoft.com/en-us/azure/>
