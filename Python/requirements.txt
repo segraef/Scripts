@@ -1,3 +1,2 @@
 requests>=2.32,<3
-flask
 python-dotenv

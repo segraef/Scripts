@@ -7,11 +7,11 @@ source .venv/bin/activate
 Install modules:
 python -m pip install -r requirements.txt
 
-Run the script:
-python book.py
+Run a script:
+python hibp.py
 
 Leave the venv:
 deactivate
 
 Shortcut without starting the venv:
-./.venv/bin/python book.py
+./.venv/bin/python hibp.py
