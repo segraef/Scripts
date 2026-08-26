@@ -1,5 +1,7 @@
 # ![AzureIcon] ![BashIcon] ![PowershellIcon] Scripts
 
+[![Scanned with SecKit](https://raw.githubusercontent.com/segraef/sec-kit/main/docs/media/badge.svg)](https://github.com/segraef/sec-kit)
+
 A collection of automation scripts across PowerShell, Bash, Python and JavaScript for Azure, DevOps and general infrastructure tasks.
 
 ## Repository structure
