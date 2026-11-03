@@ -9,7 +9,7 @@
 #              No strict mode by design: missing fields must degrade gracefully.
 # Usage:       Wire up in ~/.claude/settings.json:
 #              "statusLine": { "type": "command",
-#                "command": "bash ~/Git/GitHub/segraef/Scripts/Bash/claude-statusline.sh" }
+#                "command": "bash /path/to/Scripts/Bash/claude-statusline.sh" }
 # Author:      Sebastian Gräf
 # Repo:        https://github.com/segraef/Scripts
 
