@@ -50,11 +50,15 @@ colour_for() {
   else printf '\033[32m'; fi                      # green
 }
 
-# Context window size: 1M for [1m] models, else 200k.
-case "$model_id" in
-  *1m*|*\[1m\]*) window=1000000 ;;
-  *) window=200000 ;;
-esac
+# Context window size as Claude Code reports it. A 1M session can carry a model
+# ID without "1m", so the ID guess is only the fallback for versions without it.
+window=$(printf '%s' "$input" | jq -r '.context_window.context_window_size // empty | select(. > 0)')
+if [ -z "$window" ]; then
+  case "$model_id" in
+    *1m*) window=1000000 ;;  # also matches "[1m]"
+    *) window=200000 ;;
+  esac
+fi
 
 # Latest context size = last assistant usage in the transcript.
 used=0

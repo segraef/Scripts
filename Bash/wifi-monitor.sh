@@ -167,7 +167,14 @@ report() {  # one line per lost lease or Wi-Fi drop found in macOS's own log
             else if ($0 ~ /server not responding/) lost = t
             else if ($0 ~ IF " link INACTIVE") { if (drop == "") drop = t; if (lost == "") { lost = t; why = "  (Wi-Fi went off while the address was still valid: not a lease failure)" } }
         }
-        END { if (n == 0) print "no drops found"; else printf "%d drops\n", n }'
+        END {
+            if (lost != "") {  # the log ends mid-outage: count it rather than report no drops
+                n++
+                printf "%s  #%d  address %s | renewal unanswered %s | address lost %s | Wi-Fi off/on %s | no recovery logged yet%s\n", \
+                    day, n, v(lease), v(renew), lost, v(drop), why
+            }
+            if (n == 0) print "no drops found"; else printf "%d drops\n", n
+        }'
 }
 
 shortcut() {  # double-clickable Desktop app: shows whether the fix is on and turns it on or off
